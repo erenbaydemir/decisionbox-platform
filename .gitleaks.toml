@@ -1,0 +1,7 @@
+title = "DecisionBox Gitleaks Config"
+
+[allowlist]
+  paths = [
+    '''go\.sum$''',
+    '''\.env\.example$''',
+  ]
