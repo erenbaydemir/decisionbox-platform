@@ -1,0 +1,619 @@
+package discovery
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/decisionbox-io/decisionbox/libs/go-common/domainpack"
+	gowarehouse "github.com/decisionbox-io/decisionbox/libs/go-common/warehouse"
+	"github.com/decisionbox-io/decisionbox/services/agent/internal/ai"
+	"github.com/decisionbox-io/decisionbox/services/agent/internal/database"
+	"github.com/decisionbox-io/decisionbox/services/agent/internal/debug"
+	applog "github.com/decisionbox-io/decisionbox/services/agent/internal/log"
+	"github.com/decisionbox-io/decisionbox/services/agent/internal/models"
+	"github.com/decisionbox-io/decisionbox/services/agent/internal/queryexec"
+	"github.com/decisionbox-io/decisionbox/services/agent/internal/validation"
+)
+
+// Orchestrator coordinates the entire discovery process.
+type Orchestrator struct {
+	aiClient      *ai.Client
+	warehouse     gowarehouse.Provider
+	discoveryPack domainpack.DiscoveryPack
+
+	contextRepo   *database.ContextRepository
+	discoveryRepo *database.DiscoveryRepository
+	debugLogRepo  *database.DebugLogRepository
+
+	schemaDiscovery      *SchemaDiscovery
+	explorationEngine    *ai.ExplorationEngine
+	userCountValidator   *validation.UserCountValidator
+	insightValidator     *validation.InsightValidator
+
+	debugLogger *debug.Logger
+
+	projectID   string
+	domain      string
+	category    string
+	profile     map[string]interface{}
+	filterField string
+	filterValue string
+}
+
+// OrchestratorOptions configures the orchestrator.
+type OrchestratorOptions struct {
+	AIClient      *ai.Client
+	Warehouse     gowarehouse.Provider
+	DiscoveryPack domainpack.DiscoveryPack
+
+	ContextRepo   *database.ContextRepository
+	DiscoveryRepo *database.DiscoveryRepository
+	DebugLogRepo  *database.DebugLogRepository
+
+	ProjectID       string
+	Domain          string
+	Category        string
+	Profile         map[string]interface{}
+	FilterField     string
+	FilterValue     string
+	EnableDebugLogs bool
+}
+
+// NewOrchestrator creates a new discovery orchestrator.
+func NewOrchestrator(opts OrchestratorOptions) *Orchestrator {
+	var debugLogger *debug.Logger
+	if opts.DebugLogRepo != nil {
+		debugLogger = debug.NewLogger(debug.LoggerOptions{
+			Repo:    opts.DebugLogRepo,
+			AppID:   opts.ProjectID,
+			Enabled: opts.EnableDebugLogs,
+		})
+	}
+
+	if opts.AIClient != nil && debugLogger != nil {
+		opts.AIClient.SetDebugLogger(debugLogger)
+	}
+
+	// Initialize user count validator
+	filterClause := ""
+	if opts.FilterField != "" && opts.FilterValue != "" {
+		filterClause = fmt.Sprintf("WHERE %s = '%s'", opts.FilterField, opts.FilterValue)
+	}
+
+	var ucValidator *validation.UserCountValidator
+	if opts.Warehouse != nil {
+		ucValidator = validation.NewUserCountValidator(validation.UserCountValidatorOptions{
+			Warehouse:   opts.Warehouse,
+			DebugLogger: debugLogger,
+			Dataset:     opts.Warehouse.GetDataset(),
+			Filter:      filterClause,
+		})
+	}
+
+	var insightVal *validation.InsightValidator
+	if opts.Warehouse != nil && opts.AIClient != nil {
+		insightVal = validation.NewInsightValidator(validation.InsightValidatorOptions{
+			AIClient:  opts.AIClient,
+			Warehouse: opts.Warehouse,
+			Dataset:   opts.Warehouse.GetDataset(),
+			Filter:    filterClause,
+		})
+	}
+
+	return &Orchestrator{
+		aiClient:           opts.AIClient,
+		warehouse:          opts.Warehouse,
+		discoveryPack:      opts.DiscoveryPack,
+		contextRepo:        opts.ContextRepo,
+		discoveryRepo:      opts.DiscoveryRepo,
+		debugLogRepo:       opts.DebugLogRepo,
+		debugLogger:        debugLogger,
+		userCountValidator: ucValidator,
+		insightValidator:   insightVal,
+		projectID:          opts.ProjectID,
+		domain:             opts.Domain,
+		category:           opts.Category,
+		profile:            opts.Profile,
+		filterField:        opts.FilterField,
+		filterValue:        opts.FilterValue,
+	}
+}
+
+// DiscoveryOptions configures a discovery run.
+type DiscoveryOptions struct {
+	MaxSteps              int
+	SkipSchemaCache       bool
+	IncludeExplorationLog bool
+	TestMode              bool
+}
+
+// RunDiscovery executes the complete discovery process.
+func (o *Orchestrator) RunDiscovery(ctx context.Context, opts DiscoveryOptions) (*models.DiscoveryResult, error) {
+	applog.WithFields(applog.Fields{
+		"project_id": o.projectID,
+		"domain":     o.domain,
+		"category":   o.category,
+	}).Info("Starting discovery run")
+
+	startTime := time.Now()
+
+	// Get prompts and analysis areas from domain pack
+	prompts := o.discoveryPack.Prompts(o.category)
+	analysisAreas := o.discoveryPack.AnalysisAreas(o.category)
+
+	// Build filter clause
+	filterClause := o.buildFilterClause()
+	dataset := o.warehouse.GetDataset()
+
+	// Initialize query executor
+	sqlFixer := ai.NewSQLFixer(ai.SQLFixerOptions{
+		Client:       o.aiClient,
+		SQLFixPrompt: o.warehouse.SQLFixPrompt(),
+		Dataset:      dataset,
+		Filter:       filterClause,
+	})
+	executor := queryexec.NewQueryExecutor(queryexec.QueryExecutorOptions{
+		Warehouse:   o.warehouse,
+		SQLFixer:    sqlFixer,
+		DebugLogger: o.debugLogger,
+		MaxRetries:  5,
+		FilterField: o.filterField,
+		FilterValue: o.filterValue,
+	})
+
+	// Initialize schema discovery
+	o.schemaDiscovery = NewSchemaDiscovery(SchemaDiscoveryOptions{
+		Warehouse: o.warehouse,
+		Executor:  executor,
+		ProjectID: o.projectID,
+		Dataset:   dataset,
+		Filter:    filterClause,
+	})
+
+	// Phase 1: Load project context
+	applog.Info("Phase 1: Loading project context")
+	projectCtx, err := o.loadProjectContext(ctx)
+	if err != nil {
+		applog.WithError(err).Warn("Failed to load project context, starting fresh")
+		projectCtx = models.NewProjectContext(o.projectID)
+	}
+
+	// Phase 2: Schema discovery
+	applog.Info("Phase 2: Discovering schemas")
+	schemas, err := o.discoverSchemas(ctx, projectCtx, opts.SkipSchemaCache)
+	if err != nil {
+		return nil, fmt.Errorf("schema discovery failed: %w", err)
+	}
+	applog.WithField("tables", len(schemas)).Info("Schemas discovered")
+
+	// Build context for prompts
+	schemaJSON, _ := json.MarshalIndent(o.simplifySchemas(schemas), "", "  ")
+	profileJSON, _ := json.MarshalIndent(o.profile, "", "  ")
+	areasDesc := o.buildAnalysisAreasDescription(analysisAreas)
+
+	// Prepare exploration prompt with substitutions
+	explorationPrompt := prompts.Exploration
+	explorationPrompt = strings.ReplaceAll(explorationPrompt, "{{DATASET}}", dataset)
+	explorationPrompt = strings.ReplaceAll(explorationPrompt, "{{SCHEMA_INFO}}", string(schemaJSON))
+	explorationPrompt = strings.ReplaceAll(explorationPrompt, "{{FILTER}}", filterClause)
+	explorationPrompt = strings.ReplaceAll(explorationPrompt, "{{FILTER_CONTEXT}}", o.buildFilterContext())
+	explorationPrompt = strings.ReplaceAll(explorationPrompt, "{{FILTER_RULE}}", o.buildFilterRule())
+	explorationPrompt = strings.ReplaceAll(explorationPrompt, "{{PROFILE}}", string(profileJSON))
+	explorationPrompt = strings.ReplaceAll(explorationPrompt, "{{PREVIOUS_CONTEXT}}", o.buildPreviousContext(projectCtx))
+	explorationPrompt = strings.ReplaceAll(explorationPrompt, "{{ANALYSIS_AREAS}}", areasDesc)
+
+	// Phase 3: Autonomous exploration
+	applog.Info("Phase 3: Running autonomous exploration")
+	o.explorationEngine = ai.NewExplorationEngine(ai.ExplorationEngineOptions{
+		Client:   o.aiClient,
+		Executor: executor,
+		MaxSteps: opts.MaxSteps,
+		Dataset:  dataset,
+	})
+
+	explorationResult, err := o.explorationEngine.Explore(ctx, ai.ExplorationContext{
+		ProjectID:     o.projectID,
+		Dataset:       dataset,
+		InitialPrompt: explorationPrompt,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("exploration failed: %w", err)
+	}
+	applog.WithField("steps", explorationResult.TotalSteps).Info("Exploration completed")
+
+	// Phase 4: Analysis by area (dynamic from domain pack)
+	applog.Info("Phase 4: Running analysis by area")
+	allInsights := make([]models.Insight, 0)
+	analysisLog := make([]models.AnalysisStep, 0)
+
+	for _, area := range analysisAreas {
+		areaPrompt, ok := prompts.AnalysisAreas[area.ID]
+		if !ok {
+			applog.WithField("area", area.ID).Warn("No prompt for analysis area, skipping")
+			continue
+		}
+
+		// Filter exploration queries relevant to this area
+		relevantQueries := o.filterQueriesByKeywords(explorationResult.Steps, area.Keywords)
+		if len(relevantQueries) == 0 {
+			applog.WithField("area", area.ID).Info("No relevant queries found, skipping")
+			continue
+		}
+
+		applog.WithFields(applog.Fields{
+			"area":    area.ID,
+			"queries": len(relevantQueries),
+		}).Info("Analyzing area")
+
+		// Prepare analysis prompt
+		queryResultsJSON, _ := json.MarshalIndent(relevantQueries, "", "  ")
+		prompt := areaPrompt
+		prompt = strings.ReplaceAll(prompt, "{{DATASET}}", dataset)
+		prompt = strings.ReplaceAll(prompt, "{{TOTAL_QUERIES}}", fmt.Sprintf("%d", len(relevantQueries)))
+		prompt = strings.ReplaceAll(prompt, "{{PROFILE}}", string(profileJSON))
+		prompt = strings.ReplaceAll(prompt, "{{QUERY_RESULTS}}", string(queryResultsJSON))
+
+		// Create analysis step to capture full dialog
+		step := models.AnalysisStep{
+			AreaID:          area.ID,
+			AreaName:        area.Name,
+			RunAt:           time.Now(),
+			Prompt:          prompt,
+			RelevantQueries: len(relevantQueries),
+		}
+
+		// Call LLM
+		chatResult, err := o.aiClient.Chat(ctx, prompt, "", 8000)
+		if err != nil {
+			step.Error = err.Error()
+			analysisLog = append(analysisLog, step)
+			applog.WithFields(applog.Fields{"area": area.ID, "error": err.Error()}).Warn("Analysis failed")
+			continue
+		}
+
+		step.Response = chatResult.Content
+		step.TokensIn = chatResult.TokensIn
+		step.TokensOut = chatResult.TokensOut
+		step.DurationMs = chatResult.DurationMs
+
+		// Parse insights from response
+		insights, parseErr := o.parseInsights(chatResult.Content, area.ID)
+		if parseErr != nil {
+			step.Error = fmt.Sprintf("parse error: %s", parseErr.Error())
+			analysisLog = append(analysisLog, step)
+			applog.WithFields(applog.Fields{"area": area.ID, "error": parseErr.Error()}).Warn("Failed to parse insights")
+			continue
+		}
+
+		step.Insights = insights
+
+		// Phase 4.5: Validate insights
+		if len(insights) > 0 {
+			var areaValidation []models.ValidationResult
+
+			// First: validate user counts against total users
+			if o.userCountValidator != nil {
+				countResults := o.userCountValidator.ValidateInsights(ctx, insights)
+				areaValidation = append(areaValidation, countResults...)
+			}
+
+			// Second: verify insights by querying the warehouse
+			if o.insightValidator != nil {
+				warehouseResults := o.insightValidator.ValidateInsights(ctx, insights)
+				areaValidation = append(areaValidation, warehouseResults...)
+			}
+
+			step.ValidationResults = areaValidation
+		}
+
+		analysisLog = append(analysisLog, step)
+		allInsights = append(allInsights, insights...)
+
+		applog.WithFields(applog.Fields{
+			"area":     area.ID,
+			"insights": len(insights),
+		}).Info("Analysis complete for area")
+	}
+
+	// Phase 5: Generate recommendations
+	applog.Info("Phase 5: Generating recommendations")
+	recommendations, recStep := o.generateRecommendations(ctx, prompts.Recommendations, allInsights, profileJSON, dataset)
+
+	// Validate recommendation segment sizes
+	var recValidationResults []models.ValidationResult
+	if o.userCountValidator != nil && len(recommendations) > 0 {
+		recValidationResults = o.userCountValidator.ValidateRecommendations(ctx, recommendations)
+	}
+
+	// Phase 6: Update project context
+	applog.Info("Phase 6: Updating project context")
+	projectCtx.RecordDiscovery(true)
+	if err := o.saveProjectContext(ctx, projectCtx); err != nil {
+		applog.WithError(err).Warn("Failed to save project context")
+	}
+
+	// Phase 7: Save discovery result
+	applog.Info("Phase 7: Saving discovery result")
+
+	// Merge all validation results
+	allValidation := make([]models.ValidationResult, 0)
+	for _, step := range analysisLog {
+		allValidation = append(allValidation, step.ValidationResults...)
+	}
+	allValidation = append(allValidation, recValidationResults...)
+
+	result := &models.DiscoveryResult{
+		ProjectID:       o.projectID,
+		Domain:          o.domain,
+		Category:        o.category,
+		DiscoveryDate:   time.Now(),
+		TotalSteps:      explorationResult.TotalSteps,
+		Duration:        time.Since(startTime),
+		Schemas:         schemas,
+		Insights:        allInsights,
+		Recommendations: recommendations,
+		Summary: models.Summary{
+			Date:                 time.Now(),
+			TotalInsights:        len(allInsights),
+			TotalRecommendations: len(recommendations),
+			QueriesExecuted:      explorationResult.TotalSteps,
+		},
+		ExplorationLog:    explorationResult.Steps,
+		AnalysisLog:       analysisLog,
+		RecommendationLog: recStep,
+		ValidationLog:     allValidation,
+		CreatedAt:         time.Now(),
+		UpdatedAt:         time.Now(),
+	}
+
+	if err := o.discoveryRepo.Save(ctx, result); err != nil {
+		return nil, fmt.Errorf("failed to save discovery result: %w", err)
+	}
+
+	applog.WithFields(applog.Fields{
+		"project_id":      o.projectID,
+		"insights":        len(allInsights),
+		"recommendations": len(recommendations),
+		"validations":     len(allValidation),
+		"duration":        time.Since(startTime).String(),
+	}).Info("Discovery run completed")
+
+	return result, nil
+}
+
+// parseInsights parses LLM response JSON into Insight structs.
+func (o *Orchestrator) parseInsights(response string, areaID string) ([]models.Insight, error) {
+	var result struct {
+		Insights []models.Insight `json:"insights"`
+	}
+
+	cleaned := cleanJSONResponse(response)
+	if err := json.Unmarshal([]byte(cleaned), &result); err != nil {
+		return nil, fmt.Errorf("failed to parse analysis response: %w", err)
+	}
+
+	for i := range result.Insights {
+		result.Insights[i].AnalysisArea = areaID
+		if result.Insights[i].DiscoveredAt.IsZero() {
+			result.Insights[i].DiscoveredAt = time.Now()
+		}
+	}
+
+	return result.Insights, nil
+}
+
+// generateRecommendations generates actionable recommendations and captures the full dialog.
+func (o *Orchestrator) generateRecommendations(
+	ctx context.Context,
+	promptTemplate string,
+	insights []models.Insight,
+	profileJSON []byte,
+	dataset string,
+) ([]models.Recommendation, *models.RecommendationStep) {
+	step := &models.RecommendationStep{
+		RunAt:        time.Now(),
+		InsightCount: len(insights),
+	}
+
+	if len(insights) == 0 {
+		return make([]models.Recommendation, 0), step
+	}
+
+	insightsJSON, _ := json.MarshalIndent(insights, "", "  ")
+
+	// Build insights summary
+	areaCounts := make(map[string]int)
+	for _, i := range insights {
+		areaCounts[i.AnalysisArea]++
+	}
+	parts := make([]string, 0)
+	for area, count := range areaCounts {
+		parts = append(parts, fmt.Sprintf("%s: %d", area, count))
+	}
+	summary := fmt.Sprintf("Total: %d insights (%s)", len(insights), strings.Join(parts, ", "))
+
+	prompt := promptTemplate
+	prompt = strings.ReplaceAll(prompt, "{{DISCOVERY_DATE}}", time.Now().Format("2006-01-02"))
+	prompt = strings.ReplaceAll(prompt, "{{INSIGHTS_SUMMARY}}", summary)
+	prompt = strings.ReplaceAll(prompt, "{{PROFILE}}", string(profileJSON))
+	prompt = strings.ReplaceAll(prompt, "{{INSIGHTS_DATA}}", string(insightsJSON))
+
+	step.Prompt = prompt
+
+	chatResult, err := o.aiClient.Chat(ctx, prompt, "", 8000)
+	if err != nil {
+		step.Error = err.Error()
+		applog.WithError(err).Warn("Failed to generate recommendations")
+		return make([]models.Recommendation, 0), step
+	}
+
+	step.Response = chatResult.Content
+	step.TokensIn = chatResult.TokensIn
+	step.TokensOut = chatResult.TokensOut
+	step.DurationMs = chatResult.DurationMs
+
+	var result struct {
+		Recommendations []models.Recommendation `json:"recommendations"`
+	}
+
+	cleaned := cleanJSONResponse(chatResult.Content)
+	if err := json.Unmarshal([]byte(cleaned), &result); err != nil {
+		step.Error = fmt.Sprintf("parse error: %s", err.Error())
+		applog.WithError(err).Warn("Failed to parse recommendations")
+		return make([]models.Recommendation, 0), step
+	}
+
+	for i := range result.Recommendations {
+		if result.Recommendations[i].CreatedAt.IsZero() {
+			result.Recommendations[i].CreatedAt = time.Now()
+		}
+	}
+
+	step.Recommendations = result.Recommendations
+	return result.Recommendations, step
+}
+
+// --- Helper methods ---
+
+func (o *Orchestrator) buildFilterClause() string {
+	if o.filterField == "" || o.filterValue == "" {
+		return ""
+	}
+	return fmt.Sprintf("WHERE %s = '%s'", o.filterField, o.filterValue)
+}
+
+func (o *Orchestrator) buildFilterContext() string {
+	if o.filterField == "" {
+		return ""
+	}
+	return fmt.Sprintf("**Filter**: All queries must include `%s = '%s'`", o.filterField, o.filterValue)
+}
+
+func (o *Orchestrator) buildFilterRule() string {
+	if o.filterField == "" {
+		return "**No filter required**: This dataset contains only this project's data."
+	}
+	return fmt.Sprintf("**ALWAYS filter by %s**: `WHERE %s = '%s'`", o.filterField, o.filterField, o.filterValue)
+}
+
+func (o *Orchestrator) buildAnalysisAreasDescription(areas []domainpack.AnalysisArea) string {
+	var sb strings.Builder
+	for i, area := range areas {
+		sb.WriteString(fmt.Sprintf("%d. **%s** - %s\n", i+1, area.Name, area.Description))
+	}
+	return sb.String()
+}
+
+func (o *Orchestrator) buildPreviousContext(pctx *models.ProjectContext) string {
+	if pctx == nil || pctx.TotalDiscoveries == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("## Previous Discovery Context\n\n")
+	sb.WriteString(fmt.Sprintf("This is discovery run #%d. ", pctx.TotalDiscoveries+1))
+	sb.WriteString(fmt.Sprintf("Last discovery: %s.\n", pctx.LastDiscoveryDate.Format("2006-01-02")))
+
+	if len(pctx.Notes) > 0 {
+		sb.WriteString("\n### Key Learnings\n")
+		shown := 0
+		for i := len(pctx.Notes) - 1; i >= 0 && shown < 10; i-- {
+			note := pctx.Notes[i]
+			if note.Relevance >= 0.5 {
+				sb.WriteString(fmt.Sprintf("- %s\n", note.Note))
+				shown++
+			}
+		}
+	}
+
+	return sb.String()
+}
+
+func (o *Orchestrator) simplifySchemas(schemas map[string]models.TableSchema) map[string]interface{} {
+	simplified := make(map[string]interface{})
+	for name, schema := range schemas {
+		cols := make([]map[string]string, 0, len(schema.Columns))
+		for _, col := range schema.Columns {
+			cols = append(cols, map[string]string{
+				"name": col.Name, "type": col.Type, "category": col.Category,
+			})
+		}
+		simplified[name] = map[string]interface{}{
+			"row_count":  schema.RowCount,
+			"columns":    cols,
+			"metrics":    schema.Metrics,
+			"dimensions": schema.Dimensions,
+		}
+	}
+	return simplified
+}
+
+func (o *Orchestrator) loadProjectContext(ctx context.Context) (*models.ProjectContext, error) {
+	return o.contextRepo.GetByProjectID(ctx, o.projectID)
+}
+
+func (o *Orchestrator) saveProjectContext(ctx context.Context, pctx *models.ProjectContext) error {
+	return o.contextRepo.Save(ctx, pctx)
+}
+
+func (o *Orchestrator) discoverSchemas(ctx context.Context, pctx *models.ProjectContext, skipCache bool) (map[string]models.TableSchema, error) {
+	if !skipCache && pctx != nil && len(pctx.KnownSchemas) > 0 {
+		schemas := make(map[string]models.TableSchema)
+		for name, sk := range pctx.KnownSchemas {
+			schemas[name] = sk.CurrentSchema
+		}
+		applog.WithField("cached_tables", len(schemas)).Info("Using cached schemas")
+		return schemas, nil
+	}
+
+	return o.schemaDiscovery.DiscoverSchemas(ctx)
+}
+
+func (o *Orchestrator) filterQueriesByKeywords(steps []models.ExplorationStep, keywords []string) []models.ExplorationStep {
+	var filtered []models.ExplorationStep
+	for _, step := range steps {
+		if step.Query == "" {
+			continue
+		}
+		text := strings.ToLower(step.Query + " " + step.QueryPurpose + " " + step.Thinking)
+		for _, kw := range keywords {
+			if strings.Contains(text, strings.ToLower(kw)) {
+				filtered = append(filtered, step)
+				break
+			}
+		}
+	}
+	return filtered
+}
+
+func cleanJSONResponse(response string) string {
+	response = strings.TrimSpace(response)
+
+	if idx := strings.Index(response, "```json"); idx >= 0 {
+		start := idx + len("```json")
+		if end := strings.Index(response[start:], "```"); end >= 0 {
+			return strings.TrimSpace(response[start : start+end])
+		}
+	}
+
+	if idx := strings.Index(response, "```"); idx >= 0 {
+		start := idx + len("```")
+		if nl := strings.Index(response[start:], "\n"); nl >= 0 {
+			start += nl + 1
+		}
+		if end := strings.Index(response[start:], "```"); end >= 0 {
+			return strings.TrimSpace(response[start : start+end])
+		}
+	}
+
+	for i, c := range response {
+		if c == '{' || c == '[' {
+			return response[i:]
+		}
+	}
+
+	return response
+}
