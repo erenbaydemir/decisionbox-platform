@@ -1,22 +1,28 @@
-.PHONY: help infra-up infra-down build test lint clean
+.PHONY: help up down build test dev agent-run clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-# --- Infrastructure ---
+# --- Docker Compose ---
 
-infra-up: ## Start infrastructure (MongoDB)
-	docker compose up -d
+up: ## Start all services (MongoDB + API + Dashboard)
+	docker compose up -d --build
 
-infra-down: ## Stop infrastructure
+down: ## Stop all services
 	docker compose down
 
-infra-reset: ## Stop infrastructure and remove volumes
+reset: ## Stop all services and remove volumes
 	docker compose down -v
+
+logs: ## Follow logs from all services
+	docker compose logs -f
+
+logs-api: ## Follow API logs
+	docker compose logs -f api
 
 # --- Build ---
 
-build: build-agent build-api ## Build all services
+build: build-agent build-api ## Build all Go binaries
 
 build-agent: ## Build the DecisionBox Agent
 	cd services/agent && go build -o ../../bin/decisionbox-agent .
@@ -24,23 +30,44 @@ build-agent: ## Build the DecisionBox Agent
 build-api: ## Build the DecisionBox API
 	cd services/api && go build -o ../../bin/decisionbox-api .
 
+build-dashboard: ## Build the Dashboard
+	cd ui/dashboard && npm run build
+
 # --- Test ---
 
-test: ## Run all tests
+test: test-go test-ui ## Run all tests
+
+test-go: ## Run Go unit tests
 	cd libs/go-common && go test ./...
-	cd providers/llm/claude && go test ./...
-	cd providers/warehouse/bigquery && go test ./...
 	cd domain-packs/gaming/go && go test ./...
+	cd providers/llm/openai && go test ./...
+	cd services/agent && go test ./...
+	cd services/api && go test ./...
 
-test-coverage: ## Run tests with coverage
-	cd libs/go-common && go test -cover ./...
+test-integration: ## Run integration tests (requires Docker)
+	cd services/agent && go test -tags=integration -count=1 .
+	cd services/agent && go test -tags=integration -count=1 ./internal/database/
+	cd services/api && go test -tags=integration -count=1 .
 
-# --- Lint ---
+test-ollama: ## Run Ollama LLM integration tests (requires Docker, slow)
+	cd services/agent && go test -tags='integration ollama' -count=1 -timeout=10m -run TestOllama .
 
-lint: ## Run linters
-	@echo "TODO: add golangci-lint"
+test-ui: ## Run dashboard tests
+	cd ui/dashboard && npm test
+
+# --- Development ---
+
+dev-api: ## Run API locally (requires MongoDB on localhost:27017)
+	cd services/api && MONGODB_URI=mongodb://localhost:27017 MONGODB_DB=decisionbox go run .
+
+dev-dashboard: ## Run Dashboard locally
+	cd ui/dashboard && npm run dev
+
+agent-run: ## Run discovery agent for a project (usage: make agent-run PROJECT_ID=xxx)
+	cd services/agent && go run . --project-id=$(PROJECT_ID)
 
 # --- Clean ---
 
 clean: ## Remove build artifacts
 	rm -rf bin/
+	rm -rf ui/dashboard/.next

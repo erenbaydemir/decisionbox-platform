@@ -5,35 +5,32 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-// Collection names used by the decisionbox-agent.
+// Collection names shared between agent and API.
+// Both services read/write the same MongoDB database.
 const (
-	CollectionDiscoveries = "ai_discoveries"
-	CollectionAppContext  = "ai_app_context"
-	CollectionApps        = "apps"
-	CollectionDebugLogs   = "ai_discovery_debug_logs"
+	CollectionProjects       = "projects"
+	CollectionDiscoveries    = "discoveries"
+	CollectionProjectContext = "project_context"
+	CollectionDebugLogs      = "discovery_debug_logs"
 )
 
-// DB wraps go-common's MongoDB client for decisionbox-agent.
+// DB wraps go-common's MongoDB client.
 type DB struct {
 	client *gomongo.Client
 }
 
-// New creates a DB wrapper.
 func New(client *gomongo.Client) *DB {
 	return &DB{client: client}
 }
 
-// Client returns the underlying go-common MongoDB client.
 func (db *DB) Client() *gomongo.Client {
 	return db.client
 }
 
-// Collection returns a MongoDB collection by name.
 func (db *DB) Collection(name string) *mongo.Collection {
 	return db.client.Collection(name)
 }
 
-// Database returns the underlying mongo.Database for packages that need it.
 func (db *DB) Database() *mongo.Database {
 	return db.client.Database()
 }

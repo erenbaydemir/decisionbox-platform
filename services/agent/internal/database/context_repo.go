@@ -12,8 +12,6 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-const CollectionProjectContext = "project_context"
-
 // ContextRepository manages ProjectContext persistence.
 type ContextRepository struct {
 	collection *mongo.Collection

@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"net/http"
 
 	"github.com/decisionbox-io/decisionbox/services/api/internal/database"
@@ -15,9 +14,6 @@ func New(db *database.DB) http.Handler {
 	// Repos
 	projectRepo := database.NewProjectRepository(db)
 	discoveryRepo := database.NewDiscoveryRepository(db)
-
-	// Ensure indexes
-	projectRepo.EnsureIndexes(context.Background())
 
 	// Handlers
 	domains := handler.NewDomainsHandler()

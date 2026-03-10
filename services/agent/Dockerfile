@@ -4,26 +4,35 @@ RUN apk add --no-cache git ca-certificates
 
 WORKDIR /workspace
 
-COPY libs/go-common/ libs/go-common/
-COPY services/ai-discovery-worker/ services/ai-discovery-worker/
+# Copy module files first for layer caching
+COPY libs/go-common/go.mod libs/go-common/go.sum libs/go-common/
+COPY providers/llm/claude/go.mod providers/llm/claude/
+COPY providers/llm/openai/go.mod providers/llm/openai/
+COPY providers/llm/ollama/go.mod providers/llm/ollama/go.sum providers/llm/ollama/
+COPY providers/llm/vertex-ai/go.mod providers/llm/vertex-ai/
+COPY providers/llm/bedrock/go.mod providers/llm/bedrock/
+COPY providers/warehouse/bigquery/go.mod providers/warehouse/bigquery/go.sum providers/warehouse/bigquery/
+COPY domain-packs/gaming/go/go.mod domain-packs/gaming/go/
+COPY services/agent/go.mod services/agent/go.sum services/agent/
 
-WORKDIR /workspace/services/ai-discovery-worker
-
+WORKDIR /workspace/services/agent
 RUN go mod download
-RUN CGO_ENABLED=0 GOOS=linux go build -o /ai-discovery-worker .
+
+# Copy source
+WORKDIR /workspace
+COPY libs/ libs/
+COPY providers/ providers/
+COPY domain-packs/ domain-packs/
+COPY services/agent/ services/agent/
+
+WORKDIR /workspace/services/agent
+RUN CGO_ENABLED=0 GOOS=linux go build -o /decisionbox-agent .
 
 FROM alpine:3.21
+RUN apk add --no-cache ca-certificates tzdata && \
+    addgroup -g 1000 -S app && adduser -u 1000 -S app -G app
 
-RUN apk add --no-cache ca-certificates tzdata
+COPY --from=builder /decisionbox-agent /usr/local/bin/decisionbox-agent
 
-RUN addgroup -g 1000 -S appgroup && \
-    adduser -u 1000 -S appuser -G appgroup
-
-COPY --from=builder /ai-discovery-worker /ai-discovery-worker
-COPY --from=builder /workspace/services/ai-discovery-worker/prompts /prompts
-
-RUN chown -R appuser:appgroup /ai-discovery-worker /prompts
-
-USER appuser
-
-ENTRYPOINT ["/ai-discovery-worker"]
+USER app
+ENTRYPOINT ["decisionbox-agent"]

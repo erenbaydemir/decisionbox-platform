@@ -49,6 +49,13 @@ func TestMain(m *testing.M) {
 	defer client.Disconnect(ctx)
 
 	testDB = database.New(client)
+
+	// Initialize database (same as production startup)
+	if err := database.InitDatabase(ctx, testDB); err != nil {
+		fmt.Fprintf(os.Stderr, "InitDatabase failed: %v\n", err)
+		os.Exit(1)
+	}
+
 	testServer = httptest.NewServer(server.New(testDB))
 	defer testServer.Close()
 
@@ -289,6 +296,61 @@ func TestInteg_DiscoveryEndpoints(t *testing.T) {
 
 	// Cleanup
 	doRequest(t, "DELETE", "/api/v1/projects/"+id, nil)
+}
+
+// --- Database Init ---
+
+func TestInteg_InitDatabase_Collections(t *testing.T) {
+	ctx := context.Background()
+
+	// Verify all expected collections exist by listing them
+	colNames, err := testDB.Collection("projects").Database().ListCollectionNames(ctx, map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("ListCollectionNames error: %v", err)
+	}
+
+	expected := []string{"projects", "discoveries", "project_context", "discovery_debug_logs"}
+	for _, name := range expected {
+		found := false
+		for _, col := range colNames {
+			if col == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("collection %q not found in %v", name, colNames)
+		}
+	}
+}
+
+func TestInteg_InitDatabase_Idempotent(t *testing.T) {
+	// Calling InitDatabase again should not fail
+	err := database.InitDatabase(context.Background(), testDB)
+	if err != nil {
+		t.Errorf("second InitDatabase should be idempotent: %v", err)
+	}
+}
+
+func TestInteg_InitDatabase_Indexes(t *testing.T) {
+	ctx := context.Background()
+
+	// Check that indexes exist on the discoveries collection
+	cursor, err := testDB.Collection("discoveries").Indexes().List(ctx)
+	if err != nil {
+		t.Fatalf("list indexes error: %v", err)
+	}
+	defer cursor.Close(ctx)
+
+	var indexes []map[string]interface{}
+	if err := cursor.All(ctx, &indexes); err != nil {
+		t.Fatalf("decode indexes error: %v", err)
+	}
+
+	// Should have at least 3 indexes (default _id + our 3)
+	if len(indexes) < 3 {
+		t.Errorf("discoveries indexes = %d, want >= 3", len(indexes))
+	}
 }
 
 // --- CORS ---

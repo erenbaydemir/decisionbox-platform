@@ -9,8 +9,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
-const CollectionProjects = "projects"
-
 // ProjectRepository provides access to project documents.
 type ProjectRepository struct {
 	db *DB

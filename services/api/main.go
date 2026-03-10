@@ -40,6 +40,14 @@ func main() {
 
 	db := database.New(mongoClient)
 
+	// Initialize database (collections + indexes)
+	fmt.Println("Initializing database...")
+	if err := database.InitDatabase(ctx, db); err != nil {
+		fmt.Fprintf(os.Stderr, "Database init failed: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("Database initialized")
+
 	// HTTP server
 	handler := server.New(db)
 	srv := &http.Server{
