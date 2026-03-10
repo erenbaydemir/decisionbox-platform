@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Match-3 Game Profile Extensions",
+  "description": "Additional profile fields specific to match-3 puzzle games.",
+  "type": "object",
+  "properties": {
+    "progression": {
+      "type": "object",
+      "title": "Level Progression",
+      "properties": {
+        "type": {
+          "type": "string",
+          "title": "Progression Type",
+          "enum": ["linear", "branching", "open"]
+        },
+        "total_levels": { "type": "integer", "title": "Total Levels" },
+        "levels_per_chapter": { "type": "integer", "title": "Levels Per Chapter" },
+        "star_system": { "type": "boolean", "title": "Has Star Rating" },
+        "max_stars_per_level": { "type": "integer", "title": "Max Stars Per Level" }
+      }
+    },
+    "boosters": {
+      "type": "array",
+      "title": "Boosters / Power-ups",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "title": "Booster Name" },
+          "description": { "type": "string", "title": "Description" },
+          "usage": {
+            "type": "string",
+            "title": "Usage Type",
+            "enum": ["consumable", "permanent", "timed"]
+          },
+          "starting_amount": { "type": "integer", "title": "Starting Amount" },
+          "can_purchase": { "type": "boolean", "title": "Can Be Purchased" },
+          "can_earn": { "type": "boolean", "title": "Can Be Earned" }
+        }
+      }
+    },
+    "iap_packages": {
+      "type": "array",
+      "title": "IAP Packages",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "title": "Package Name" },
+          "sku": { "type": "string", "title": "SKU" },
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "enum": ["consumable", "non_consumable", "subscription"]
+          },
+          "price_usd": { "type": "number", "title": "Price (USD)" },
+          "contents": {
+            "type": "object",
+            "title": "Contents",
+            "additionalProperties": { "type": "number" }
+          }
+        }
+      }
+    },
+    "lootboxes": {
+      "type": "array",
+      "title": "Lootboxes / Reward Chests",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "title": "Name" },
+          "rarity": { "type": "string", "title": "Rarity", "enum": ["common", "rare", "epic", "legendary"] },
+          "possible_rewards": {
+            "type": "array",
+            "title": "Possible Rewards",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "retention_features": {
+      "type": "object",
+      "title": "Retention Features",
+      "properties": {
+        "daily_rewards": { "type": "boolean", "title": "Has Daily Rewards" },
+        "streak_bonus": { "type": "boolean", "title": "Has Streak Bonus" },
+        "max_streak_days": { "type": "integer", "title": "Max Streak Days" }
+      }
+    }
+  }
+}

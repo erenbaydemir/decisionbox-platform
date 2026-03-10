@@ -22,6 +22,23 @@ type Provider interface {
 	// GetDataset returns the dataset/schema name being queried.
 	GetDataset() string
 
+	// SQLDialect returns the SQL dialect name for this warehouse.
+	// Used by the discovery agent to give the LLM context about syntax.
+	//   BigQuery: "BigQuery Standard SQL"
+	//   PostgreSQL: "PostgreSQL"
+	//   ClickHouse: "ClickHouse SQL"
+	SQLDialect() string
+
+	// SQLFixPrompt returns a prompt template for fixing SQL errors in this
+	// warehouse's dialect. The prompt contains common error patterns and
+	// syntax rules specific to this warehouse.
+	//
+	// Templates use placeholders: {{DATASET}}, {{FILTER}}, {{SCHEMA_INFO}},
+	// {{ORIGINAL_SQL}}, {{ERROR_MESSAGE}}, {{CONVERSATION_HISTORY}}.
+	//
+	// Returns empty string if no warehouse-specific prompt is available.
+	SQLFixPrompt() string
+
 	// HealthCheck verifies the warehouse connection is alive.
 	HealthCheck(ctx context.Context) error
 

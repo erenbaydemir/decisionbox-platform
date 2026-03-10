@@ -12,13 +12,6 @@ type Provider interface {
 	Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error)
 }
 
-// EmbeddingProvider abstracts text embedding operations.
-// Implement this interface to add a new embedding provider
-// (e.g., OpenAI text-embedding-3, Vertex AI, local sentence-transformers).
-type EmbeddingProvider interface {
-	Embed(ctx context.Context, texts []string) ([][]float64, error)
-}
-
 // ChatRequest defines the input for an LLM chat call.
 type ChatRequest struct {
 	Model        string    // Model ID (e.g., "claude-sonnet-4-20250514", "gpt-4o")

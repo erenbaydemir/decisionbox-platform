@@ -5,6 +5,7 @@ package bigquery
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"strconv"
 	"time"
@@ -14,6 +15,9 @@ import (
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 )
+
+//go:embed prompts/sql_fix.md
+var sqlFixPrompt string
 
 func init() {
 	gowarehouse.Register("bigquery", func(cfg gowarehouse.ProviderConfig) (gowarehouse.Provider, error) {
@@ -164,6 +168,14 @@ func (p *BigQueryProvider) GetTableSchema(ctx context.Context, table string) (*g
 
 func (p *BigQueryProvider) GetDataset() string {
 	return p.dataset
+}
+
+func (p *BigQueryProvider) SQLDialect() string {
+	return "BigQuery Standard SQL"
+}
+
+func (p *BigQueryProvider) SQLFixPrompt() string {
+	return sqlFixPrompt
 }
 
 func (p *BigQueryProvider) HealthCheck(ctx context.Context) error {

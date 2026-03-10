@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Gaming Project Profile",
+  "description": "Profile schema for gaming domain projects. Provides context to the AI agent about the game's design, mechanics, and business model.",
+  "type": "object",
+  "properties": {
+    "basic_info": {
+      "type": "object",
+      "title": "Basic Information",
+      "properties": {
+        "genre": {
+          "type": "string",
+          "title": "Genre",
+          "enum": ["puzzle", "fps", "strategy", "rpg", "casual", "simulation", "sports", "racing", "adventure", "other"]
+        },
+        "sub_genre": {
+          "type": "string",
+          "title": "Sub-Genre",
+          "description": "E.g., Match-3, Hidden Object, Battle Royale"
+        },
+        "platforms": {
+          "type": "array",
+          "title": "Platforms",
+          "items": { "type": "string", "enum": ["iOS", "Android", "Web", "PC", "Console"] }
+        },
+        "target_audience": {
+          "type": "string",
+          "title": "Target Audience",
+          "description": "E.g., 'Adult Female 30-65+', 'Male 18-35'"
+        },
+        "description": {
+          "type": "string",
+          "title": "Game Description",
+          "description": "Brief description of the game"
+        }
+      }
+    },
+    "gameplay": {
+      "type": "object",
+      "title": "Gameplay",
+      "properties": {
+        "core_mechanic": {
+          "type": "string",
+          "title": "Core Mechanic",
+          "description": "E.g., match3, hidden_object, shooter, tower_defense"
+        },
+        "game_type": {
+          "type": "string",
+          "title": "Game Type",
+          "enum": ["level_based", "open_world", "session_based", "endless", "story_driven"]
+        },
+        "session_type": {
+          "type": "string",
+          "title": "Session Type",
+          "enum": ["short", "medium", "long"],
+          "description": "short: <5min, medium: 5-15min, long: 15min+"
+        },
+        "avg_session_duration_minutes": {
+          "type": "integer",
+          "title": "Avg Session Duration (minutes)"
+        },
+        "complexity": {
+          "type": "string",
+          "title": "Complexity",
+          "enum": ["low", "medium", "high"]
+        },
+        "difficulty_curve": {
+          "type": "string",
+          "title": "Difficulty Curve",
+          "enum": ["gradual", "steep", "flat", "wave"]
+        }
+      }
+    },
+    "monetization": {
+      "type": "object",
+      "title": "Monetization",
+      "properties": {
+        "model": {
+          "type": "string",
+          "title": "Model",
+          "enum": ["freemium", "premium", "ad_supported", "subscription"]
+        },
+        "has_ads": { "type": "boolean", "title": "Has Ads" },
+        "has_iap": { "type": "boolean", "title": "Has In-App Purchases" },
+        "has_subscription": { "type": "boolean", "title": "Has Subscription" }
+      }
+    },
+    "kpis": {
+      "type": "object",
+      "title": "Target KPIs",
+      "properties": {
+        "retention_d1_target": { "type": "number", "title": "D1 Retention Target (%)" },
+        "retention_d7_target": { "type": "number", "title": "D7 Retention Target (%)" },
+        "retention_d30_target": { "type": "number", "title": "D30 Retention Target (%)" },
+        "arpu_target": { "type": "number", "title": "ARPU Target ($)" },
+        "dau_target": { "type": "integer", "title": "DAU Target" },
+        "session_length_target": { "type": "number", "title": "Avg Session Length Target (min)" }
+      }
+    }
+  }
+}
