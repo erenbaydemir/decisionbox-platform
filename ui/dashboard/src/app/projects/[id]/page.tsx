@@ -3,17 +3,19 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import {
-  Badge, Button, Card, Checkbox, Grid, Group, Loader, Menu, NumberInput,
-  Progress, ScrollArea, Stack, Text, Timeline, Title,
+  Badge, Button, Card, Checkbox, Code, Collapse, Grid, Group, Loader, Menu, NumberInput,
+  Progress, ScrollArea, Stack, Text, Title,
 } from '@mantine/core';
+import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import {
-  IconBulb, IconCheck, IconChevronDown, IconDatabase, IconEdit,
-  IconPlayerPlay, IconSearch, IconSettings, IconX,
+  IconAlertTriangle, IconBrain, IconBulb, IconCheck, IconChevronDown, IconChevronRight,
+  IconDatabase, IconEdit, IconPlayerPlay, IconSearch, IconSettings,
+  IconShieldCheck, IconX,
 } from '@tabler/icons-react';
 import Link from 'next/link';
 import Shell from '@/components/layout/AppShell';
-import { api, DiscoveryResult, DiscoveryRunStatus, Project } from '@/lib/api';
+import { api, DiscoveryResult, DiscoveryRunStatus, Project, RunStep } from '@/lib/api';
 
 export default function ProjectPage() {
   const { id } = useParams<{ id: string }>();
@@ -33,7 +35,7 @@ export default function ProjectPage() {
         return api.getAnalysisAreas(p.domain, p.category)
           .then((areas) => setAnalysisAreas(areas.map((a) => ({ id: a.id, name: a.name }))));
       }),
-      api.listDiscoveries(id).then(setDiscoveries).catch(() => []),
+      api.listDiscoveries(id).then((d) => setDiscoveries(d || [])).catch(() => setDiscoveries([])),
     ])
       .catch((e) => notifications.show({ title: 'Error', message: e.message, color: 'red' }))
       .finally(() => setLoading(false));
@@ -42,12 +44,23 @@ export default function ProjectPage() {
   const pollStatus = useCallback(async () => {
     try {
       const status = await api.getProjectStatus(id);
-      if (status?.run) setRun(status.run as unknown as DiscoveryRunStatus);
+      if (status?.run) {
+        const newRun = status.run as unknown as DiscoveryRunStatus;
+        const wasRunning = run && (run.status === 'running' || run.status === 'pending');
+        const nowDone = newRun.status === 'completed' || newRun.status === 'failed';
+        setRun(newRun);
+        // Refresh discoveries list when run finishes
+        if (wasRunning && nowDone) {
+          api.listDiscoveries(id).then((d) => setDiscoveries(d || [])).catch(() => {});
+        }
+      }
     } catch { /* ignore */ }
-  }, [id]);
+  }, [id, run]);
 
   useEffect(() => {
-    if (!run || (run.status !== 'running' && run.status !== 'pending')) return;
+    if (!run) return;
+    // Keep polling while running, and briefly after completion to catch final state
+    if (run.status !== 'running' && run.status !== 'pending') return;
     const interval = setInterval(pollStatus, 2000);
     return () => clearInterval(interval);
   }, [run, pollStatus]);
@@ -79,6 +92,8 @@ export default function ProjectPage() {
   if (!project) return <Shell><Text>Project not found</Text></Shell>;
 
   const isRunning = run && (run.status === 'running' || run.status === 'pending');
+  const justFinished = run && (run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled');
+  const showRunCard = isRunning || justFinished;
   const latestDiscovery = discoveries.length > 0 ? discoveries[0] : null;
 
   return (
@@ -141,8 +156,13 @@ export default function ProjectPage() {
         </Group>
 
         {/* Live Run Status */}
-        {isRunning && run && (
+        {showRunCard && run && (
           <LiveRunStatus run={run} onCancel={async () => {
+            if (justFinished) {
+              // Dismiss completed card
+              setRun(null);
+              return;
+            }
             try {
               await api.cancelRun(run.id);
               setRun({ ...run, status: 'cancelled' });
@@ -241,36 +261,199 @@ export default function ProjectPage() {
 }
 
 function LiveRunStatus({ run, onCancel }: { run: DiscoveryRunStatus; onCancel: () => void }) {
+  const steps = run.steps || [];
+  const phaseLabel: Record<string, string> = {
+    init: 'Initializing', schema_discovery: 'Discovering Schema',
+    exploration: 'Exploring Data', analysis: 'Analyzing Patterns',
+    validation: 'Validating Insights', recommendations: 'Generating Recommendations',
+    saving: 'Saving Results', complete: 'Complete',
+  };
+
+  const isDone = run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled';
+  const statusColor = run.status === 'completed' ? 'green' : run.status === 'failed' ? 'red' : run.status === 'cancelled' ? 'orange' : 'blue';
+
   return (
-    <Card withBorder p="lg" shadow="sm">
-      <Group justify="space-between" mb="sm">
-        <Group><Loader size="sm" /><Title order={4}>Discovery Running</Title></Group>
-        <Group>
-          <Badge color="blue" variant="light">{run.phase}</Badge>
-          <Button size="xs" variant="light" color="red" onClick={onCancel}>Cancel</Button>
+    <Card withBorder p="lg" shadow="sm" radius="md">
+      {/* Header */}
+      <Group justify="space-between" mb="md">
+        <Group gap="sm">
+          {isDone
+            ? (run.status === 'completed'
+              ? <IconCheck size={20} color="var(--mantine-color-green-6)" />
+              : <IconAlertTriangle size={20} color={`var(--mantine-color-${statusColor}-6)`} />)
+            : <Loader size="sm" color="blue" />}
+          <Title order={4}>
+            {isDone
+              ? (run.status === 'completed' ? 'Discovery Complete' : run.status === 'failed' ? 'Discovery Failed' : 'Discovery Cancelled')
+              : 'Discovery in Progress'}
+          </Title>
+        </Group>
+        <Group gap="xs">
+          <Badge color={statusColor} variant="light" size="lg">{phaseLabel[run.phase] || run.phase}</Badge>
+          {!isDone && <Button size="xs" variant="light" color="red" onClick={onCancel}>Cancel</Button>}
+          {isDone && <Button size="xs" variant="subtle" color="gray" onClick={onCancel}>Dismiss</Button>}
         </Group>
       </Group>
-      <Progress value={run.progress} mb="sm" animated />
-      <Text size="sm" c="dimmed" mb="md">{run.phase_detail}</Text>
-      <Group gap="xl" mb="md">
-        <Text size="xs" c="dimmed">Queries: {run.total_queries}</Text>
-        <Text size="xs" c="dimmed">Insights: {run.insights_found}</Text>
+
+      {/* Progress bar */}
+      <Progress value={run.progress} mb={4} animated={!isDone} size="md" radius="xl" color={statusColor} />
+      <Group justify="space-between" mb="md">
+        {run.error && <Text size="xs" c="red">{run.error}</Text>}
+        <Text size="xs" c="dimmed" ml="auto">{run.progress}%</Text>
       </Group>
-      {run.steps && run.steps.length > 0 && (
-        <ScrollArea h={200} type="auto">
-          <Timeline active={run.steps.length - 1} bulletSize={18} lineWidth={2}>
-            {run.steps.slice(-15).map((step, idx) => (
-              <Timeline.Item key={idx}
-                bullet={step.type === 'insight' ? <IconBulb size={10} /> :
-                        step.type === 'error' ? <IconX size={10} /> :
-                        <IconDatabase size={10} />}
-                color={step.type === 'error' ? 'red' : step.type === 'insight' ? 'green' : 'blue'}
-                title={<Text size="xs">{step.message}</Text>}>
-                {step.llm_thinking && <Text size="xs" c="dimmed">{step.llm_thinking}</Text>}
-              </Timeline.Item>
+
+      {/* Stats row */}
+      <Group gap="lg" mb="md">
+        <Group gap={4}>
+          <IconDatabase size={14} color="var(--mantine-color-blue-5)" />
+          <Text size="sm" fw={600}>{run.total_queries}</Text>
+          <Text size="xs" c="dimmed">queries</Text>
+        </Group>
+        {run.successful_queries > 0 && (
+          <Group gap={4}>
+            <IconCheck size={14} color="var(--mantine-color-green-5)" />
+            <Text size="sm" fw={600}>{run.successful_queries}</Text>
+            <Text size="xs" c="dimmed">successful</Text>
+          </Group>
+        )}
+        {run.failed_queries > 0 && (
+          <Group gap={4}>
+            <IconX size={14} color="var(--mantine-color-red-5)" />
+            <Text size="sm" fw={600}>{run.failed_queries}</Text>
+            <Text size="xs" c="dimmed">failed</Text>
+          </Group>
+        )}
+        {run.insights_found > 0 && (
+          <Group gap={4}>
+            <IconBulb size={14} color="var(--mantine-color-yellow-5)" />
+            <Text size="sm" fw={600}>{run.insights_found}</Text>
+            <Text size="xs" c="dimmed">insights</Text>
+          </Group>
+        )}
+      </Group>
+
+      {/* Live step feed */}
+      {steps.length > 0 && (
+        <ScrollArea h={400} type="auto" viewportRef={(el) => {
+          if (el) el.scrollTop = el.scrollHeight;
+        }}>
+          <Stack gap={6}>
+            {steps.map((step, idx) => (
+              <StepCard key={idx} step={step} />
             ))}
-          </Timeline>
+          </Stack>
         </ScrollArea>
+      )}
+
+      {steps.length === 0 && (
+        <Text size="sm" c="dimmed" ta="center" py="xl">{run.phase_detail || 'Starting...'}</Text>
+      )}
+    </Card>
+  );
+}
+
+function StepCard({ step }: { step: RunStep }) {
+  const [opened, { toggle }] = useDisclosure(false);
+  const hasDetails = step.query || (step.llm_thinking && step.llm_thinking.length > 80);
+
+  if (step.type === 'insight') {
+    return (
+      <Card withBorder p="xs" radius="sm" bg="var(--mantine-color-green-0)">
+        <Group gap="xs">
+          <IconBulb size={16} color="var(--mantine-color-yellow-6)" />
+          <Text size="sm" fw={600}>{step.insight_name || step.message}</Text>
+          {step.insight_severity && (
+            <Badge size="xs" color={
+              step.insight_severity === 'critical' ? 'red' :
+              step.insight_severity === 'high' ? 'orange' :
+              step.insight_severity === 'medium' ? 'yellow' : 'gray'
+            }>{step.insight_severity}</Badge>
+          )}
+        </Group>
+      </Card>
+    );
+  }
+
+  if (step.type === 'analysis') {
+    return (
+      <Card withBorder p="xs" radius="sm" bg="var(--mantine-color-violet-0)">
+        <Group gap="xs">
+          <IconBrain size={16} color="var(--mantine-color-violet-6)" />
+          <Text size="sm" fw={600}>{step.message}</Text>
+        </Group>
+      </Card>
+    );
+  }
+
+  if (step.type === 'validation') {
+    return (
+      <Card withBorder p="xs" radius="sm" bg="var(--mantine-color-teal-0)">
+        <Group gap="xs">
+          <IconShieldCheck size={16} color="var(--mantine-color-teal-6)" />
+          <Text size="sm">{step.message}</Text>
+        </Group>
+      </Card>
+    );
+  }
+
+  if (step.type === 'error') {
+    return (
+      <Card withBorder p="xs" radius="sm" bg="var(--mantine-color-red-0)">
+        <Group gap="xs">
+          <IconAlertTriangle size={16} color="var(--mantine-color-red-6)" />
+          <Text size="sm" c="red">{step.error || step.message}</Text>
+        </Group>
+      </Card>
+    );
+  }
+
+  // Query step (exploration)
+  const thinking = step.llm_thinking || '';
+  const thinkingPreview = thinking.length > 120 ? thinking.slice(0, 120) + '...' : thinking;
+
+  return (
+    <Card withBorder p="xs" radius="sm"
+      style={{ cursor: hasDetails ? 'pointer' : 'default' }}
+      onClick={hasDetails ? toggle : undefined}>
+      <Group justify="space-between" gap="xs" wrap="nowrap">
+        <Group gap="xs" wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
+          {hasDetails && (
+            <IconChevronRight size={14} style={{
+              transform: opened ? 'rotate(90deg)' : 'none',
+              transition: 'transform 150ms',
+              flexShrink: 0,
+            }} />
+          )}
+          <IconDatabase size={14} color="var(--mantine-color-blue-5)" style={{ flexShrink: 0 }} />
+          <Text size="xs" c="dimmed" lineClamp={1} style={{ flex: 1 }}>
+            {step.step_num > 0 && <Text span fw={600} c="dark" size="xs">Step {step.step_num}: </Text>}
+            {thinkingPreview || step.message}
+          </Text>
+        </Group>
+        <Group gap={4} wrap="nowrap" style={{ flexShrink: 0 }}>
+          {step.row_count > 0 && <Badge size="xs" variant="outline" color="blue">{step.row_count} rows</Badge>}
+          {step.query_time_ms > 0 && <Badge size="xs" variant="outline" color="gray">{step.query_time_ms}ms</Badge>}
+          {step.query_fixed && <Badge size="xs" variant="light" color="orange">fixed</Badge>}
+          {step.error && <Badge size="xs" variant="light" color="red">error</Badge>}
+        </Group>
+      </Group>
+
+      {hasDetails && (
+        <Collapse in={opened}>
+          <Stack gap={4} mt="xs">
+            {thinking.length > 120 && (
+              <Text size="xs" c="dimmed" style={{ whiteSpace: 'pre-wrap' }}>{thinking}</Text>
+            )}
+            {step.query && (
+              <Code block style={{ fontSize: 11, maxHeight: 150, overflow: 'auto' }}>
+                {step.query}
+              </Code>
+            )}
+            {step.query_result && (
+              <Text size="xs" c="dimmed">{step.query_result}</Text>
+            )}
+          </Stack>
+        </Collapse>
       )}
     </Card>
   );

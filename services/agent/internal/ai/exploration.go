@@ -18,14 +18,19 @@ type ExplorationEngine struct {
 	executor *queryexec.QueryExecutor
 	maxSteps int
 	dataset  string
+	onStep   StepCallback
 }
+
+// StepCallback is called after each exploration step with live progress data.
+type StepCallback func(stepNum int, thinking, query string, rowCount int, queryTimeMs int64, queryFixed bool, errMsg string)
 
 // ExplorationEngineOptions configures the exploration engine.
 type ExplorationEngineOptions struct {
-	Client   *Client
-	Executor *queryexec.QueryExecutor
-	MaxSteps int
-	Dataset  string
+	Client       *Client
+	Executor     *queryexec.QueryExecutor
+	MaxSteps     int
+	Dataset      string
+	OnStep       StepCallback // optional: called after each step for live status
 }
 
 // NewExplorationEngine creates a new exploration engine.
@@ -39,6 +44,7 @@ func NewExplorationEngine(opts ExplorationEngineOptions) *ExplorationEngine {
 		executor: opts.Executor,
 		maxSteps: opts.MaxSteps,
 		dataset:  opts.Dataset,
+		onStep:   opts.OnStep,
 	}
 }
 
@@ -142,6 +148,12 @@ func (e *ExplorationEngine) Explore(
 		// Add to results
 		result.Steps = append(result.Steps, explorationStep)
 		result.TotalSteps = step
+
+		// Report step for live status
+		if e.onStep != nil {
+			errMsg := explorationStep.Error
+			e.onStep(step, action.Thinking, explorationStep.Query, explorationStep.RowCount, explorationStep.ExecutionTimeMs, explorationStep.Fixed, errMsg)
+		}
 
 		// Check if exploration is complete
 		if action.Action == "complete" {

@@ -11,13 +11,17 @@ import (
 // StatusReporter writes live status updates to MongoDB during a discovery run.
 // If runID is empty, status reporting is disabled (agent run without API).
 type StatusReporter struct {
-	repo  *database.RunRepository
-	runID string
+	repo     *database.RunRepository
+	runID    string
+	maxSteps int
 }
 
 // NewStatusReporter creates a status reporter. Pass empty runID to disable.
-func NewStatusReporter(repo *database.RunRepository, runID string) *StatusReporter {
-	return &StatusReporter{repo: repo, runID: runID}
+func NewStatusReporter(repo *database.RunRepository, runID string, maxSteps int) *StatusReporter {
+	if maxSteps <= 0 {
+		maxSteps = 100
+	}
+	return &StatusReporter{repo: repo, runID: runID, maxSteps: maxSteps}
 }
 
 func (s *StatusReporter) enabled() bool {
@@ -78,11 +82,11 @@ func (s *StatusReporter) AddExplorationStep(ctx context.Context, stepNum int, th
 	s.repo.AddStep(ctx, s.runID, step)
 
 	// Update progress: exploration is 10-60% of total
-	progress := 10 + (stepNum * 50 / 100) // rough progress
+	progress := 10 + (stepNum * 50 / s.maxSteps)
 	if progress > 60 {
 		progress = 60
 	}
-	detail := fmt.Sprintf("Step %d: exploring data...", stepNum)
+	detail := fmt.Sprintf("Step %d/%d: exploring data...", stepNum, s.maxSteps)
 	s.repo.UpdateStatus(ctx, s.runID, models.RunStatusRunning, models.PhaseExploration, detail, progress)
 
 	// Update query count
@@ -124,6 +128,26 @@ func (s *StatusReporter) AddInsightStep(ctx context.Context, name, severity, are
 		Message:         fmt.Sprintf("Found: %s (%s)", name, severity),
 		InsightName:     name,
 		InsightSeverity: severity,
+	}
+
+	s.repo.AddStep(ctx, s.runID, step)
+}
+
+// AddValidationStep logs a validation check result.
+func (s *StatusReporter) AddValidationStep(ctx context.Context, insightName, status string, claimed, verified int) {
+	if !s.enabled() {
+		return
+	}
+
+	msg := fmt.Sprintf("Validated \"%s\": %s", insightName, status)
+	if claimed > 0 {
+		msg = fmt.Sprintf("Validated \"%s\": %s (claimed: %d, verified: %d)", insightName, status, claimed, verified)
+	}
+
+	step := models.RunStep{
+		Phase:   models.PhaseValidation,
+		Type:    "validation",
+		Message: msg,
 	}
 
 	s.repo.AddStep(ctx, s.runID, step)

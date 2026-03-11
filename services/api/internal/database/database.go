@@ -229,7 +229,7 @@ func (r *DiscoveryRepository) List(ctx context.Context, projectID string, limit 
 	}
 	defer cursor.Close(ctx)
 
-	var results []*models.DiscoveryResult
+	results := make([]*models.DiscoveryResult, 0)
 	if err := cursor.All(ctx, &results); err != nil {
 		return nil, fmt.Errorf("decode discoveries: %w", err)
 	}

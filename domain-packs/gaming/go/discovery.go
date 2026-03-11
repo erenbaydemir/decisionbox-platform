@@ -13,7 +13,7 @@ import (
 // getPromptsPath returns the path to prompts, checking env var on each call.
 func getPromptsPath() string {
 	if p := os.Getenv("DOMAIN_PACK_PATH"); p != "" {
-		return filepath.Join(p, "prompts")
+		return filepath.Join(p, "gaming", "prompts")
 	}
 	return "domain-packs/gaming/prompts"
 }
@@ -21,7 +21,7 @@ func getPromptsPath() string {
 // getProfilesPath returns the path to profiles, checking env var on each call.
 func getProfilesPath() string {
 	if p := os.Getenv("DOMAIN_PACK_PATH"); p != "" {
-		return filepath.Join(p, "profiles")
+		return filepath.Join(p, "gaming", "profiles")
 	}
 	return "domain-packs/gaming/profiles"
 }

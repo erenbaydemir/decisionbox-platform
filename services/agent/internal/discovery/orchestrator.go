@@ -104,7 +104,7 @@ func NewOrchestrator(opts OrchestratorOptions) *Orchestrator {
 	// InsightValidator created in RunDiscovery where QueryExecutor is available
 
 	// Status reporter for live updates
-	statusReporter := NewStatusReporter(opts.RunRepo, opts.RunID)
+	statusReporter := NewStatusReporter(opts.RunRepo, opts.RunID, 0)
 
 	return &Orchestrator{
 		aiClient:           opts.AIClient,
@@ -138,6 +138,12 @@ type DiscoveryOptions struct {
 
 // RunDiscovery executes the complete discovery process.
 func (o *Orchestrator) RunDiscovery(ctx context.Context, opts DiscoveryOptions) (*models.DiscoveryResult, error) {
+	// Set max steps for accurate progress reporting
+	o.statusReporter.maxSteps = opts.MaxSteps
+	if o.statusReporter.maxSteps <= 0 {
+		o.statusReporter.maxSteps = 100
+	}
+
 	applog.WithFields(applog.Fields{
 		"project_id": o.projectID,
 		"domain":     o.domain,
@@ -236,6 +242,9 @@ func (o *Orchestrator) RunDiscovery(ctx context.Context, opts DiscoveryOptions) 
 		Executor: executor,
 		MaxSteps: opts.MaxSteps,
 		Dataset:  datasetsStr,
+		OnStep: func(stepNum int, thinking, query string, rowCount int, queryTimeMs int64, queryFixed bool, errMsg string) {
+			o.statusReporter.AddExplorationStep(ctx, stepNum, thinking, query, rowCount, queryTimeMs, queryFixed, errMsg)
+		},
 	})
 
 	explorationResult, err := o.explorationEngine.Explore(ctx, ai.ExplorationContext{
@@ -363,6 +372,11 @@ func (o *Orchestrator) RunDiscovery(ctx context.Context, opts DiscoveryOptions) 
 		o.statusReporter.AddAnalysisStep(ctx, area.ID, area.Name, len(insights), "")
 		for _, insight := range insights {
 			o.statusReporter.AddInsightStep(ctx, insight.Name, insight.Severity, area.ID)
+		}
+
+		// Report validation results to status
+		for _, vr := range step.ValidationResults {
+			o.statusReporter.AddValidationStep(ctx, vr.ClaimedMetric, vr.Status, vr.ClaimedCount, vr.VerifiedCount)
 		}
 
 		applog.WithFields(applog.Fields{

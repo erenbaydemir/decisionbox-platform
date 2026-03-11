@@ -163,8 +163,8 @@ func (h *DiscoveriesHandler) TriggerDiscovery(w http.ResponseWriter, r *http.Req
 	}
 	cmd := exec.Command("decisionbox-agent", args...)
 
-	// Inherit environment (warehouse/LLM config from docker-compose)
-	cmd.Env = append(cmd.Environ(),
+	// Inherit parent environment so agent gets LLM_API_KEY, DOMAIN_PACK_PATH, etc.
+	cmd.Env = append(os.Environ(),
 		"MONGODB_URI="+getEnvOrDefault("MONGODB_URI", "mongodb://localhost:27017"),
 		"MONGODB_DB="+getEnvOrDefault("MONGODB_DB", "decisionbox"),
 	)
