@@ -70,12 +70,40 @@ func (h *EstimateHandler) Estimate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse the JSON output from the agent
+	// Extract JSON from output (agent logs may be mixed in on stdout)
+	jsonBytes := extractJSONObject(output)
+	if jsonBytes == nil {
+		writeError(w, http.StatusInternalServerError, "no JSON found in agent output")
+		return
+	}
+
 	var estimate models.CostEstimate
-	if err := json.Unmarshal(output, &estimate); err != nil {
+	if err := json.Unmarshal(jsonBytes, &estimate); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to parse estimate: "+err.Error())
 		return
 	}
 
 	writeJSON(w, http.StatusOK, estimate)
+}
+
+// extractJSONObject finds the first top-level JSON object in mixed output.
+func extractJSONObject(data []byte) []byte {
+	s := string(data)
+	start := strings.Index(s, "{")
+	if start == -1 {
+		return nil
+	}
+	// Find matching closing brace
+	depth := 0
+	for i := start; i < len(s); i++ {
+		if s[i] == '{' {
+			depth++
+		} else if s[i] == '}' {
+			depth--
+			if depth == 0 {
+				return []byte(s[start : i+1])
+			}
+		}
+	}
+	return nil
 }
