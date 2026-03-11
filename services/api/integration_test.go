@@ -507,6 +507,232 @@ func TestInteg_TriggerDiscovery_AlreadyRunning(t *testing.T) {
 	// so second trigger won't conflict. This is expected in test env.
 }
 
+// --- Discovery Result Fields ---
+
+func TestInteg_DiscoveryResult_RunTypeAndAreas(t *testing.T) {
+	project := models.Project{
+		Name: "RunType Test", Domain: "gaming", Category: "match3",
+		Warehouse: models.WarehouseConfig{Provider: "bigquery", Datasets: []string{"ds"}},
+		LLM:       models.LLMConfig{Provider: "claude", Model: "test"},
+	}
+	resp := doRequest(t, "POST", "/api/v1/projects", project)
+	r := decodeResponse(t, resp)
+	id := r.Data.(map[string]interface{})["id"].(string)
+	defer doRequest(t, "DELETE", "/api/v1/projects/"+id, nil)
+
+	// Insert a full discovery
+	discCol := testDB.Collection("discoveries")
+	fullDisc := models.DiscoveryResult{
+		ProjectID: id, Domain: "gaming", Category: "match3",
+		RunType: "full", DiscoveryDate: time.Now().Add(-time.Hour),
+		TotalSteps: 100, Insights: []models.Insight{
+			{ID: "i1", AnalysisArea: "churn", Name: "Full Churn"},
+			{ID: "i2", AnalysisArea: "engagement", Name: "Full Engagement"},
+		},
+		Summary: models.Summary{TotalInsights: 2}, CreatedAt: time.Now().Add(-time.Hour),
+	}
+	discCol.InsertOne(context.Background(), fullDisc)
+
+	// Insert a partial discovery
+	partialDisc := models.DiscoveryResult{
+		ProjectID: id, Domain: "gaming", Category: "match3",
+		RunType: "partial", AreasRequested: []string{"churn"},
+		DiscoveryDate: time.Now(), TotalSteps: 20,
+		Insights: []models.Insight{{ID: "i3", AnalysisArea: "churn", Name: "Partial Churn"}},
+		Summary: models.Summary{TotalInsights: 1}, CreatedAt: time.Now(),
+	}
+	discCol.InsertOne(context.Background(), partialDisc)
+
+	// Get latest — should be the partial one
+	resp = doRequest(t, "GET", "/api/v1/projects/"+id+"/discoveries/latest", nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("latest status = %d", resp.StatusCode)
+	}
+	r = decodeResponse(t, resp)
+	latest := r.Data.(map[string]interface{})
+
+	if latest["run_type"] != "partial" {
+		t.Errorf("run_type = %v, want partial", latest["run_type"])
+	}
+
+	areasReq, ok := latest["areas_requested"].([]interface{})
+	if !ok || len(areasReq) != 1 || areasReq[0] != "churn" {
+		t.Errorf("areas_requested = %v, want [churn]", latest["areas_requested"])
+	}
+
+	// List discoveries — should have both
+	resp = doRequest(t, "GET", "/api/v1/projects/"+id+"/discoveries", nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("list status = %d", resp.StatusCode)
+	}
+	r = decodeResponse(t, resp)
+	list := r.Data.([]interface{})
+	if len(list) < 2 {
+		t.Errorf("discoveries = %d, want >= 2", len(list))
+	}
+
+	// Verify list includes run_type
+	for _, d := range list {
+		dm := d.(map[string]interface{})
+		rt := dm["run_type"]
+		if rt != "full" && rt != "partial" {
+			t.Errorf("discovery run_type = %v, want full or partial", rt)
+		}
+	}
+}
+
+func TestInteg_DiscoveryResult_FullRunNoAreas(t *testing.T) {
+	project := models.Project{
+		Name: "Full NoAreas", Domain: "gaming", Category: "match3",
+		Warehouse: models.WarehouseConfig{Provider: "bigquery", Datasets: []string{"ds"}},
+		LLM:       models.LLMConfig{Provider: "claude", Model: "test"},
+	}
+	resp := doRequest(t, "POST", "/api/v1/projects", project)
+	r := decodeResponse(t, resp)
+	id := r.Data.(map[string]interface{})["id"].(string)
+	defer doRequest(t, "DELETE", "/api/v1/projects/"+id, nil)
+
+	discCol := testDB.Collection("discoveries")
+	disc := models.DiscoveryResult{
+		ProjectID: id, Domain: "gaming", Category: "match3",
+		RunType: "full", DiscoveryDate: time.Now(), TotalSteps: 50,
+		Summary: models.Summary{TotalInsights: 0}, CreatedAt: time.Now(),
+	}
+	discCol.InsertOne(context.Background(), disc)
+
+	resp = doRequest(t, "GET", "/api/v1/projects/"+id+"/discoveries/latest", nil)
+	r = decodeResponse(t, resp)
+	latest := r.Data.(map[string]interface{})
+
+	if latest["run_type"] != "full" {
+		t.Errorf("run_type = %v, want full", latest["run_type"])
+	}
+	// areas_requested should be nil/empty for full runs
+	if areasReq, ok := latest["areas_requested"].([]interface{}); ok && len(areasReq) > 0 {
+		t.Errorf("areas_requested should be empty for full run, got %v", areasReq)
+	}
+}
+
+func TestInteg_DiscoveryList_Ordering(t *testing.T) {
+	project := models.Project{
+		Name: "Order Test", Domain: "gaming", Category: "match3",
+		Warehouse: models.WarehouseConfig{Provider: "bigquery", Datasets: []string{"ds"}},
+		LLM:       models.LLMConfig{Provider: "claude", Model: "test"},
+	}
+	resp := doRequest(t, "POST", "/api/v1/projects", project)
+	r := decodeResponse(t, resp)
+	id := r.Data.(map[string]interface{})["id"].(string)
+	defer doRequest(t, "DELETE", "/api/v1/projects/"+id, nil)
+
+	discCol := testDB.Collection("discoveries")
+
+	// Insert 3 discoveries with different dates
+	for i, steps := range []int{10, 20, 30} {
+		disc := models.DiscoveryResult{
+			ProjectID: id, Domain: "gaming", Category: "match3",
+			RunType: "full", DiscoveryDate: time.Now().Add(time.Duration(i) * time.Hour),
+			TotalSteps: steps, Summary: models.Summary{TotalInsights: steps},
+			CreatedAt: time.Now().Add(time.Duration(i) * time.Hour),
+		}
+		discCol.InsertOne(context.Background(), disc)
+	}
+
+	resp = doRequest(t, "GET", "/api/v1/projects/"+id+"/discoveries", nil)
+	r = decodeResponse(t, resp)
+	list := r.Data.([]interface{})
+
+	if len(list) < 3 {
+		t.Fatalf("discoveries = %d, want >= 3", len(list))
+	}
+
+	// Most recent should be first (sorted by discovery_date desc)
+	first := list[0].(map[string]interface{})
+	if int(first["total_steps"].(float64)) != 30 {
+		t.Errorf("first discovery steps = %v, want 30 (most recent)", first["total_steps"])
+	}
+}
+
+func TestInteg_TriggerDiscovery_WithMaxSteps(t *testing.T) {
+	project := models.Project{
+		Name: "MaxSteps Test", Domain: "gaming", Category: "match3",
+		Warehouse: models.WarehouseConfig{Provider: "bigquery", Datasets: []string{"ds"}},
+		LLM:       models.LLMConfig{Provider: "claude", Model: "test"},
+	}
+	resp := doRequest(t, "POST", "/api/v1/projects", project)
+	r := decodeResponse(t, resp)
+	id := r.Data.(map[string]interface{})["id"].(string)
+	defer doRequest(t, "DELETE", "/api/v1/projects/"+id, nil)
+
+	// Trigger with max_steps
+	resp = doRequest(t, "POST", "/api/v1/projects/"+id+"/discover",
+		map[string]interface{}{"max_steps": 25})
+
+	// 202 if agent binary available, 500 if not
+	if resp.StatusCode != 202 && resp.StatusCode != 500 {
+		t.Errorf("trigger with max_steps status = %d", resp.StatusCode)
+	}
+}
+
+func TestInteg_TriggerDiscovery_WithAreasAndMaxSteps(t *testing.T) {
+	project := models.Project{
+		Name: "Areas+Steps Test", Domain: "gaming", Category: "match3",
+		Warehouse: models.WarehouseConfig{Provider: "bigquery", Datasets: []string{"ds"}},
+		LLM:       models.LLMConfig{Provider: "claude", Model: "test"},
+	}
+	resp := doRequest(t, "POST", "/api/v1/projects", project)
+	r := decodeResponse(t, resp)
+	id := r.Data.(map[string]interface{})["id"].(string)
+	defer doRequest(t, "DELETE", "/api/v1/projects/"+id, nil)
+
+	// Trigger with both areas and max_steps
+	resp = doRequest(t, "POST", "/api/v1/projects/"+id+"/discover",
+		map[string]interface{}{
+			"areas":     []string{"churn"},
+			"max_steps": 15,
+		})
+
+	if resp.StatusCode != 202 && resp.StatusCode != 500 {
+		t.Errorf("trigger with areas+steps status = %d", resp.StatusCode)
+	}
+}
+
+func TestInteg_DiscoveryList_ExcludesHeavyFields(t *testing.T) {
+	project := models.Project{
+		Name: "Projection Test", Domain: "gaming", Category: "match3",
+		Warehouse: models.WarehouseConfig{Provider: "bigquery", Datasets: []string{"ds"}},
+		LLM:       models.LLMConfig{Provider: "claude", Model: "test"},
+	}
+	resp := doRequest(t, "POST", "/api/v1/projects", project)
+	r := decodeResponse(t, resp)
+	id := r.Data.(map[string]interface{})["id"].(string)
+	defer doRequest(t, "DELETE", "/api/v1/projects/"+id, nil)
+
+	discCol := testDB.Collection("discoveries")
+	disc := models.DiscoveryResult{
+		ProjectID: id, Domain: "gaming", Category: "match3",
+		RunType: "full", DiscoveryDate: time.Now(), TotalSteps: 10,
+		Summary: models.Summary{TotalInsights: 1}, CreatedAt: time.Now(),
+	}
+	discCol.InsertOne(context.Background(), disc)
+
+	// List should exclude heavy log fields
+	resp = doRequest(t, "GET", "/api/v1/projects/"+id+"/discoveries", nil)
+	r = decodeResponse(t, resp)
+	list := r.Data.([]interface{})
+	if len(list) == 0 {
+		t.Fatal("no discoveries")
+	}
+
+	first := list[0].(map[string]interface{})
+	// These heavy fields should be excluded from list (projection in repo)
+	if _, ok := first["exploration_log"]; ok {
+		t.Error("exploration_log should be excluded from list endpoint")
+	}
+	if _, ok := first["analysis_log"]; ok {
+		t.Error("analysis_log should be excluded from list endpoint")
+	}
+}
+
 // --- Run Cancel ---
 
 func TestInteg_CancelRun_NotFound(t *testing.T) {
