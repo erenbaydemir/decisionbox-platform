@@ -1,0 +1,255 @@
+=== PROMPT #8 ===
+[Message 1 - user]
+# Level Difficulty Analysis
+
+You are a gaming analytics expert analyzing level difficulty and player frustration points in a match-3 puzzle game.
+
+## Context
+
+**Dataset**: events_prod, decisionbox_features_prod
+**Exploration Queries**: 1
+
+## Project Profile
+
+null
+
+**IMPORTANT**: Use the profile to understand the progression system and difficulty curve.
+
+## Your Task
+
+Analyze the query results and identify **levels with difficulty issues** using exact metrics.
+
+## Required Output Format
+
+Respond with ONLY valid JSON:
+
+```json
+{
+  "insights": [
+    {
+      "name": "Level 42 Difficulty Spike",
+      "description": "Level 42 has 68% quit rate (3x the 23% average). 890 players attempted with avg 12.5 tries before quitting.",
+      "severity": "critical",
+      "affected_count": 890,
+      "risk_score": 0.68,
+      "confidence": 0.9,
+      "metrics": {
+        "level_number": 42,
+        "quit_rate": 0.68,
+        "success_rate": 0.22,
+        "avg_attempts": 12.5,
+        "difficulty_label": "very_hard",
+        "issue_type": "difficulty_spike"
+      },
+      "indicators": [
+        "Quit rate 68% vs 23% average",
+        "12.5 average attempts",
+        "Success rate only 22%"
+      ],
+      "target_segment": "Players reaching level 42"
+    }
+  ]
+}
+```
+
+## Quality Standards
+
+### Include ONLY levels that meet these criteria:
+- **quit_rate > 0.30** OR **success_rate < 0.40**
+- **affected_count >= 20** (sufficient sample)
+
+### difficulty_label:
+- **very_hard**: quit_rate > 0.50
+- **hard**: quit_rate 0.30-0.50
+- **medium**: quit_rate 0.15-0.30
+- **easy**: quit_rate < 0.15
+
+### issue_type:
+- **difficulty_spike**: Sudden jump from previous levels
+- **frustrating**: High attempts (>10) with high quit rate
+- **too_easy**: Very low quit rate AND very high success rate
+
+## Important Rules
+
+1. **Use ONLY data from the queries** - don't make up numbers
+2. **Filter aggressively** - only levels with CLEAR issues
+3. **No duplicates** - each level appears only once
+4. **If no problematic levels**, return `{"insights": []}`
+5. **CRITICAL**: affected_count = COUNT(DISTINCT user_id), NOT total attempts
+
+## Query Results
+
+[
+  {
+    "step": 4,
+    "timestamp": "2026-03-11T11:28:49.247102613Z",
+    "action": "query_data",
+    "thinking": "Now I'll start exploring the data for the correct app_id. First, I want to understand what types of events are being tracked for this match-3 game, which will help me understand the game mechanics and user behavior patterns.",
+    "query": "SELECT event_type, COUNT(*) as event_count, COUNT(DISTINCT user_id) as unique_users FROM `events_prod.events` WHERE app_id = '69298e53f3713168b72c23d8' GROUP BY event_type ORDER BY event_count DESC",
+    "query_result": [
+      {
+        "event_count": 79757874,
+        "event_type": "CurrencyBalanceUpdated",
+        "unique_users": 292655
+      },
+      {
+        "event_count": 75079035,
+        "event_type": "BoosterOffered",
+        "unique_users": 237355
+      },
+      {
+        "event_count": 73676285,
+        "event_type": "ScreenViewed",
+        "unique_users": 315735
+      },
+      {
+        "event_count": 70622411,
+        "event_type": "BoosterDeclined",
+        "unique_users": 233359
+      },
+      {
+        "event_count": 52947734,
+        "event_type": "LevelStarted",
+        "unique_users": 307981
+      },
+      {
+        "event_count": 51813249,
+        "event_type": "LevelFinished",
+        "unique_users": 296359
+      },
+      {
+        "event_count": 31173870,
+        "event_type": "LevelRestarted",
+        "unique_users": 236695
+      },
+      {
+        "event_count": 29720453,
+        "event_type": "LevelFailed",
+        "unique_users": 219773
+      },
+      {
+        "event_count": 22369498,
+        "event_type": "BoosterInventoryUpdated",
+        "unique_users": 263975
+      },
+      {
+        "event_count": 21698577,
+        "event_type": "LevelSuccess",
+        "unique_users": 287873
+      },
+      {
+        "event_count": 11000876,
+        "event_type": "BoosterUsed",
+        "unique_users": 227680
+      },
+      {
+        "event_count": 8645729,
+        "event_type": "RewardedAdOffered",
+        "unique_users": 50635
+      },
+      {
+        "event_count": 5970959,
+        "event_type": "SessionStarted",
+        "unique_users": 456349
+      },
+      {
+        "event_count": 4241799,
+        "event_type": "BoosterAccepted",
+        "unique_users": 189753
+      },
+      {
+        "event_count": 2142916,
+        "event_type": "AdRequested",
+        "unique_users": 41532
+      },
+      {
+        "event_count": 1530991,
+        "event_type": "PurchaseInitiated",
+        "unique_users": 185393
+      },
+      {
+        "event_count": 1350981,
+        "event_type": "PurchaseCompleted",
+        "unique_users": 177915
+      },
+      {
+        "event_count": 1250772,
+        "event_type": "SessionEnded",
+        "unique_users": 176890
+      },
+      {
+        "event_count": 792323,
+        "event_type": "AdFailedToLoad",
+        "unique_users": 27912
+      },
+      {
+        "event_count": 615934,
+        "event_type": "AdLoaded",
+        "unique_users": 35642
+      },
+      {
+        "event_count": 280590,
+        "event_type": "AdAvailabilityChecked",
+        "unique_users": 18865
+      },
+      {
+        "event_count": 254113,
+        "event_type": "RewardedAdResult",
+        "unique_users": 17563
+      },
+      {
+        "event_count": 83780,
+        "event_type": "AdRevenuePaid",
+        "unique_users": 8770
+      },
+      {
+        "event_count": 83388,
+        "event_type": "PurchaseFailed",
+        "unique_users": 12392
+      },
+      {
+        "event_count": 83229,
+        "event_type": "AdImpression",
+        "unique_users": 8696
+      },
+      {
+        "event_count": 69133,
+        "event_type": "AdClicked",
+        "unique_users": 7125
+      },
+      {
+        "event_count": 65275,
+        "event_type": "AdClosed",
+        "unique_users": 7650
+      },
+      {
+        "event_count": 58106,
+        "event_type": "PurchaseCancelled",
+        "unique_users": 29555
+      },
+      {
+        "event_count": 405,
+        "event_type": "AdShowFailed",
+        "unique_users": 302
+      },
+      {
+        "event_count": 95,
+        "event_type": "PurchasePending",
+        "unique_users": 65
+      },
+      {
+        "event_count": 2,
+        "event_type": "GameStarted",
+        "unique_users": 2
+      }
+    ],
+    "row_count": 31,
+    "execution_time_ms": 1165,
+    "llm_request": "",
+    "llm_response": "",
+    "is_insight": false
+  }
+]
+
+Now analyze and respond with valid JSON containing only problematic levels.
+

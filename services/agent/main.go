@@ -117,69 +117,44 @@ func runDiscovery(cfg *config.Config, projectID string, runID string, maxSteps i
 		return fmt.Errorf("domain pack %q does not support discovery", project.Domain)
 	}
 
-	// Resolve warehouse config: project overrides env vars
-	whProvider := cfg.Warehouse.Provider
-	whProjectID := cfg.Warehouse.ProjectID
-	whDataset := cfg.Warehouse.Dataset
-	whLocation := cfg.Warehouse.Location
-
-	if project.Warehouse.Provider != "" {
-		whProvider = project.Warehouse.Provider
-	}
-	if project.Warehouse.ProjectID != "" {
-		whProjectID = project.Warehouse.ProjectID
-	}
-	if project.Warehouse.Dataset != "" {
-		whDataset = project.Warehouse.Dataset
-	}
-	if project.Warehouse.Location != "" {
-		whLocation = project.Warehouse.Location
+	// Warehouse config comes from project
+	datasets := project.Warehouse.GetDatasets()
+	if len(datasets) == 0 {
+		return fmt.Errorf("no datasets configured in project")
 	}
 
-	// Initialize warehouse provider
-	warehouseProvider, err := gowarehouse.NewProvider(whProvider, gowarehouse.ProviderConfig{
-		"project_id":      whProjectID,
-		"dataset":         whDataset,
-		"location":        whLocation,
-		"timeout_minutes": strconv.Itoa(int(cfg.Warehouse.Timeout.Minutes())),
+	warehouseProvider, err := gowarehouse.NewProvider(project.Warehouse.Provider, gowarehouse.ProviderConfig{
+		"project_id": project.Warehouse.ProjectID,
+		"dataset":    datasets[0], // primary dataset for provider init
+		"location":   project.Warehouse.Location,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create warehouse provider (%s): %w", whProvider, err)
+		return fmt.Errorf("failed to create warehouse provider (%s): %w", project.Warehouse.Provider, err)
 	}
 	defer warehouseProvider.Close()
 	applog.WithFields(applog.Fields{
-		"provider": whProvider,
-		"dataset":  whDataset,
+		"provider": project.Warehouse.Provider,
+		"datasets": datasets,
 	}).Info("Warehouse provider initialized")
 
-	// Resolve LLM config: project overrides env vars
-	llmProvider := cfg.LLM.Provider
-	llmModel := cfg.LLM.Model
-	if project.LLM.Provider != "" {
-		llmProvider = project.LLM.Provider
-	}
-	if project.LLM.Model != "" {
-		llmModel = project.LLM.Model
-	}
-
-	// Initialize LLM provider
-	llm, err := gollm.NewProvider(llmProvider, gollm.ProviderConfig{
+	// LLM config comes from project, API key from env var (secret)
+	llm, err := gollm.NewProvider(project.LLM.Provider, gollm.ProviderConfig{
 		"api_key":          cfg.LLM.APIKey,
-		"model":            llmModel,
+		"model":            project.LLM.Model,
 		"max_retries":      strconv.Itoa(cfg.LLM.MaxRetries),
 		"timeout_seconds":  strconv.Itoa(int(cfg.LLM.Timeout.Seconds())),
 		"request_delay_ms": strconv.Itoa(cfg.LLM.RequestDelayMs),
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create LLM provider (%s): %w", llmProvider, err)
+		return fmt.Errorf("failed to create LLM provider (%s): %w", project.LLM.Provider, err)
 	}
 	applog.WithFields(applog.Fields{
-		"provider": llmProvider,
-		"model":    llmModel,
+		"provider": project.LLM.Provider,
+		"model":    project.LLM.Model,
 	}).Info("LLM provider initialized")
 
 	// Initialize AI client
-	aiClient, err := ai.New(cfg, llm)
+	aiClient, err := ai.New(llm, project.LLM.Model)
 	if err != nil {
 		return fmt.Errorf("failed to create AI client: %w", err)
 	}
@@ -221,6 +196,7 @@ func runDiscovery(cfg *config.Config, projectID string, runID string, maxSteps i
 		Domain:          project.Domain,
 		Category:        project.Category,
 		Profile:         project.Profile,
+		Datasets:        datasets,
 		FilterField:     project.Warehouse.FilterField,
 		FilterValue:     project.Warehouse.FilterValue,
 		EnableDebugLogs: enableDebugLogs,

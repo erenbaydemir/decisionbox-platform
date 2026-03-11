@@ -7,17 +7,18 @@ import (
 
 	gowarehouse "github.com/decisionbox-io/decisionbox/libs/go-common/warehouse"
 	logger "github.com/decisionbox-io/decisionbox/services/agent/internal/log"
-	"github.com/decisionbox-io/decisionbox/services/agent/internal/queryexec"
 	"github.com/decisionbox-io/decisionbox/services/agent/internal/models"
+	"github.com/decisionbox-io/decisionbox/services/agent/internal/queryexec"
 )
 
-// SchemaDiscovery discovers and analyzes warehouse table schemas.
+// SchemaDiscovery discovers and analyzes warehouse table schemas
+// across multiple datasets.
 type SchemaDiscovery struct {
 	warehouse gowarehouse.Provider
 	executor  *queryexec.QueryExecutor
 	projectID string
-	dataset   string
-	filter    string // e.g., "WHERE app_id = 'xyz'" or ""
+	datasets  []string // multiple datasets to discover
+	filter    string
 }
 
 // SchemaDiscoveryOptions configures schema discovery.
@@ -25,7 +26,7 @@ type SchemaDiscoveryOptions struct {
 	Warehouse gowarehouse.Provider
 	Executor  *queryexec.QueryExecutor
 	ProjectID string
-	Dataset   string
+	Datasets  []string
 	Filter    string
 }
 
@@ -35,47 +36,81 @@ func NewSchemaDiscovery(opts SchemaDiscoveryOptions) *SchemaDiscovery {
 		warehouse: opts.Warehouse,
 		executor:  opts.Executor,
 		projectID: opts.ProjectID,
-		dataset:   opts.Dataset,
+		datasets:  opts.Datasets,
 		filter:    opts.Filter,
 	}
 }
 
-// DiscoverSchemas discovers all tables and their schemas for the app
+// DiscoverSchemas discovers all tables across all configured datasets.
+// Table keys are "dataset.table" for multi-dataset, or just "table" for single.
 func (s *SchemaDiscovery) DiscoverSchemas(ctx context.Context) (map[string]models.TableSchema, error) {
-	logger.Info("Discovering BigQuery table schemas")
+	logger.WithField("datasets", s.datasets).Info("Discovering warehouse table schemas")
 
-	// List all tables in the dataset
-	tables, err := s.warehouse.ListTables(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list tables: %w", err)
-	}
+	allSchemas := make(map[string]models.TableSchema)
 
-	logger.WithField("table_count", len(tables)).Info("Found tables in dataset")
+	for _, dataset := range s.datasets {
+		logger.WithField("dataset", dataset).Info("Discovering schemas for dataset")
 
-	schemas := make(map[string]models.TableSchema)
+		// Query tables in this dataset using INFORMATION_SCHEMA
+		tablesQuery := fmt.Sprintf(
+			"SELECT table_name FROM `%s.INFORMATION_SCHEMA.TABLES` WHERE table_type = 'BASE TABLE'",
+			dataset,
+		)
 
-	// For each table, get detailed schema
-	for _, tableName := range tables {
-		logger.WithField("table", tableName).Debug("Discovering schema for table")
-
-		schema, err := s.DiscoverTableSchema(ctx, tableName)
+		result, err := s.warehouse.Query(ctx, tablesQuery, nil)
 		if err != nil {
-			logger.WithFields(logger.Fields{"error": err.Error(), "table": tableName}).Warn("Failed to discover table schema, skipping")
+			// Fallback: try using the provider's ListTables for the default dataset
+			logger.WithFields(logger.Fields{"dataset": dataset, "error": err.Error()}).Warn("INFORMATION_SCHEMA query failed, trying ListTables fallback")
+			tables, listErr := s.warehouse.ListTables(ctx)
+			if listErr != nil {
+				logger.WithFields(logger.Fields{"dataset": dataset, "error": listErr.Error()}).Warn("Failed to list tables, skipping dataset")
+				continue
+			}
+			for _, tableName := range tables {
+				schema, schemaErr := s.discoverTable(ctx, dataset, tableName)
+				if schemaErr != nil {
+					continue
+				}
+				key := fmt.Sprintf("%s.%s", dataset, tableName)
+				allSchemas[key] = *schema
+			}
 			continue
 		}
 
-		schemas[tableName] = *schema
+		for _, row := range result.Rows {
+			tableName, ok := row["table_name"].(string)
+			if !ok {
+				continue
+			}
+
+			schema, err := s.discoverTable(ctx, dataset, tableName)
+			if err != nil {
+				logger.WithFields(logger.Fields{"table": tableName, "dataset": dataset, "error": err.Error()}).Warn("Failed to discover table, skipping")
+				continue
+			}
+
+			// Key includes dataset: "dataset.table"
+			key := fmt.Sprintf("%s.%s", dataset, tableName)
+			allSchemas[key] = *schema
+		}
+
+		logger.WithFields(logger.Fields{
+			"dataset": dataset,
+			"tables":  len(allSchemas),
+		}).Info("Dataset schema discovery complete")
 	}
 
-	logger.WithField("schemas_discovered", len(schemas)).Info("Schema discovery complete")
+	logger.WithField("total_tables", len(allSchemas)).Info("All schema discovery complete")
 
-	return schemas, nil
+	return allSchemas, nil
 }
 
-// DiscoverTableSchema discovers the schema for a specific table
-func (s *SchemaDiscovery) DiscoverTableSchema(ctx context.Context, tableName string) (*models.TableSchema, error) {
+// discoverTable discovers the schema for a specific table in a dataset.
+func (s *SchemaDiscovery) discoverTable(ctx context.Context, dataset, tableName string) (*models.TableSchema, error) {
+	qualifiedName := fmt.Sprintf("%s.%s", dataset, tableName)
+
 	schema := &models.TableSchema{
-		TableName:    tableName,
+		TableName:    qualifiedName,
 		Columns:      make([]models.ColumnInfo, 0),
 		KeyColumns:   make([]string, 0),
 		Metrics:      make([]string, 0),
@@ -83,192 +118,81 @@ func (s *SchemaDiscovery) DiscoverTableSchema(ctx context.Context, tableName str
 		DiscoveredAt: time.Now(),
 	}
 
-	// Get table schema from warehouse
+	// Get table schema via provider (use just tableName, provider knows the dataset)
 	whSchema, err := s.warehouse.GetTableSchema(ctx, tableName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get table schema: %w", err)
+		return nil, fmt.Errorf("get schema: %w", err)
 	}
 
-	// Extract schema information
 	for _, col := range whSchema.Columns {
 		colInfo := models.ColumnInfo{
 			Name:     col.Name,
 			Type:     col.Type,
 			Nullable: col.Nullable,
-			Category: s.inferColumnCategory(col.Name, col.Type),
+			Category: inferColumnCategory(col.Name, col.Type),
 		}
 		schema.Columns = append(schema.Columns, colInfo)
-		s.categorizeColumn(&colInfo, schema)
+		categorizeColumn(&colInfo, schema)
 	}
 
-	// Get row count
 	schema.RowCount = whSchema.RowCount
 
-	// Get sample data (limit 10 rows)
-	sampleData, err := s.getSampleData(ctx, tableName)
-	if err != nil {
-		logger.WithField("error", err.Error()).Warn("Failed to get sample data")
-	} else {
+	// Get sample data
+	sampleData, err := s.getSampleData(ctx, dataset, tableName)
+	if err == nil {
 		schema.SampleData = sampleData
 	}
 
 	logger.WithFields(logger.Fields{
-		"table":       tableName,
-		"columns":     len(schema.Columns),
-		"row_count":   schema.RowCount,
-		"key_columns": len(schema.KeyColumns),
-		"metrics":     len(schema.Metrics),
-		"dimensions":  len(schema.Dimensions),
-	}).Info("Table schema discovered")
+		"table":   qualifiedName,
+		"columns": len(schema.Columns),
+		"rows":    schema.RowCount,
+	}).Debug("Table schema discovered")
 
 	return schema, nil
 }
 
-// inferColumnCategory infers the category of a column based on name and type
-func (s *SchemaDiscovery) inferColumnCategory(name string, fieldType string) string {
-	nameLower := name
+func (s *SchemaDiscovery) getSampleData(ctx context.Context, dataset, tableName string) ([]map[string]interface{}, error) {
+	filterClause := ""
+	if s.filter != "" {
+		filterClause = s.filter
+	}
+	query := fmt.Sprintf("SELECT * FROM `%s.%s` %s LIMIT 5", dataset, tableName, filterClause)
 
-	// Primary key detection
-	if nameLower == "id" || nameLower == "user_id" || nameLower == "player_id" ||
-		nameLower == "session_id" || nameLower == "event_id" {
+	result, err := s.executor.Execute(ctx, query, "sample data for "+dataset+"."+tableName)
+	if err != nil {
+		return nil, err
+	}
+	return result.Data, nil
+}
+
+func inferColumnCategory(name string, fieldType string) string {
+	if name == "id" || name == "user_id" || name == "player_id" ||
+		name == "session_id" || name == "event_id" {
 		return "primary_key"
 	}
-
-	// Time column detection
-	if nameLower == "created_at" || nameLower == "updated_at" || nameLower == "timestamp" ||
-		nameLower == "start_time" || nameLower == "end_time" || nameLower == "date" ||
+	if name == "created_at" || name == "updated_at" || name == "timestamp" ||
+		name == "start_time" || name == "end_time" || name == "date" ||
 		fieldType == "TIMESTAMP" || fieldType == "DATE" || fieldType == "DATETIME" {
 		return "time"
 	}
-
-	// Metric detection (numeric columns)
-	if fieldType == "INT64" || fieldType == "FLOAT64" || fieldType == "NUMERIC" || fieldType == "BIGNUMERIC" {
-		// Numeric columns are typically metrics unless they're IDs
-		if nameLower == "id" || nameLower == "user_id" || nameLower == "player_id" {
-			return "dimension" // IDs are dimensions, not metrics
+	if fieldType == "INT64" || fieldType == "FLOAT64" || fieldType == "NUMERIC" || fieldType == "BIGNUMERIC" ||
+		fieldType == "INTEGER" || fieldType == "FLOAT" {
+		if name == "id" || name == "user_id" || name == "player_id" {
+			return "dimension"
 		}
 		return "metric"
 	}
-
-	// Everything else is a dimension
 	return "dimension"
 }
 
-// categorizeColumn categorizes a column into metrics, dimensions, or key columns
-func (s *SchemaDiscovery) categorizeColumn(col *models.ColumnInfo, schema *models.TableSchema) {
+func categorizeColumn(col *models.ColumnInfo, schema *models.TableSchema) {
 	switch col.Category {
 	case "primary_key":
 		schema.KeyColumns = append(schema.KeyColumns, col.Name)
 	case "metric":
 		schema.Metrics = append(schema.Metrics, col.Name)
-	case "dimension":
-		schema.Dimensions = append(schema.Dimensions, col.Name)
-	case "time":
-		// Time columns are both dimensions and tracked separately
+	case "dimension", "time":
 		schema.Dimensions = append(schema.Dimensions, col.Name)
 	}
-}
-
-// getSampleData gets sample rows from the table
-func (s *SchemaDiscovery) getSampleData(ctx context.Context, tableName string) ([]map[string]interface{}, error) {
-	filterClause := ""
-	if s.filter != "" {
-		filterClause = s.filter
-	}
-	query := fmt.Sprintf("SELECT * FROM `%s.%s` %s LIMIT 10", s.dataset, tableName, filterClause)
-
-	// Use executor to run query (with error handling)
-	result, err := s.executor.Execute(ctx, query, "Get sample data for "+tableName)
-	if err != nil {
-		// If this fails, it's not critical - we can still discover schema
-		return nil, err
-	}
-
-	return result.Data, nil
-}
-
-// GetSchemaAsJSON returns the schemas as a JSON string for Claude
-func (s *SchemaDiscovery) GetSchemaAsJSON(schemas map[string]models.TableSchema) (string, error) {
-	// Build a simplified version for Claude
-	simplified := make(map[string]interface{})
-
-	for tableName, schema := range schemas {
-		tableInfo := map[string]interface{}{
-			"table_name":  tableName,
-			"row_count":   schema.RowCount,
-			"key_columns": schema.KeyColumns,
-			"metrics":     schema.Metrics,
-			"dimensions":  schema.Dimensions,
-			"columns":     make([]map[string]string, 0),
-		}
-
-		for _, col := range schema.Columns {
-			tableInfo["columns"] = append(tableInfo["columns"].([]map[string]string), map[string]string{
-				"name":     col.Name,
-				"type":     col.Type,
-				"category": col.Category,
-			})
-		}
-
-		// Add sample data if available (just first 3 rows)
-		if len(schema.SampleData) > 0 {
-			sampleCount := 3
-			if len(schema.SampleData) < sampleCount {
-				sampleCount = len(schema.SampleData)
-			}
-			tableInfo["sample_data"] = schema.SampleData[:sampleCount]
-		}
-
-		simplified[tableName] = tableInfo
-	}
-
-	// Convert to JSON
-	// Note: In production, use json.MarshalIndent for better formatting
-	// For now, we'll return a formatted string representation
-	return fmt.Sprintf("%+v", simplified), nil
-}
-
-// InspectTable provides a detailed inspection of a table for Claude
-func (s *SchemaDiscovery) InspectTable(ctx context.Context, tableName string) (string, error) {
-	schema, err := s.DiscoverTableSchema(ctx, tableName)
-	if err != nil {
-		return "", err
-	}
-
-	// Build inspection report
-	report := fmt.Sprintf("Table: %s\n", tableName)
-	report += fmt.Sprintf("Rows: %d\n", schema.RowCount)
-	report += fmt.Sprintf("Columns: %d\n\n", len(schema.Columns))
-
-	report += "Key Columns:\n"
-	for _, col := range schema.KeyColumns {
-		report += fmt.Sprintf("  - %s\n", col)
-	}
-
-	report += fmt.Sprintf("\nMetrics (%d):\n", len(schema.Metrics))
-	for _, col := range schema.Metrics {
-		report += fmt.Sprintf("  - %s\n", col)
-	}
-
-	report += fmt.Sprintf("\nDimensions (%d):\n", len(schema.Dimensions))
-	for _, col := range schema.Dimensions {
-		report += fmt.Sprintf("  - %s\n", col)
-	}
-
-	report += "\nAll Columns:\n"
-	for _, col := range schema.Columns {
-		report += fmt.Sprintf("  - %s (%s) [%s]\n", col.Name, col.Type, col.Category)
-	}
-
-	if len(schema.SampleData) > 0 {
-		report += fmt.Sprintf("\nSample Data (%d rows):\n", len(schema.SampleData))
-		for i, row := range schema.SampleData {
-			if i >= 3 {
-				break // Show only first 3 rows
-			}
-			report += fmt.Sprintf("  Row %d: %+v\n", i+1, row)
-		}
-	}
-
-	return report, nil
 }

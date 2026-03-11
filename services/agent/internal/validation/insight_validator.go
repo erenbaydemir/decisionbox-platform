@@ -173,9 +173,14 @@ func (v *InsightValidator) generateVerificationQuery(
 
 	prompt := fmt.Sprintf(`Generate a SQL verification query for this insight. The query must verify the claimed numbers.
 
-**Dataset**: %s
+**Available Datasets**: %s
 **SQL Dialect**: %s
 **Filter**: %s
+
+**CRITICAL TABLE NAME RULES**:
+- ALWAYS use fully qualified table names with backticks: `+"`dataset_name.table_name`"+`
+- Example: `+"`events_prod.sessions`"+` NOT just `+"`sessions`"+`
+- The dataset name MUST be included in every table reference
 
 **Insight to verify**:
 %s
@@ -183,7 +188,7 @@ func (v *InsightValidator) generateVerificationQuery(
 Generate a single SQL query that:
 1. Counts the affected users/entities described in this insight
 2. Uses COUNT(DISTINCT user_id) for user counts
-3. Uses fully qualified table names with backticks
+3. Uses FULLY QUALIFIED table names: `+"`dataset.table`"+`
 4. Includes the filter clause if provided
 
 Return ONLY the raw SQL query, no explanations, no markdown.`,

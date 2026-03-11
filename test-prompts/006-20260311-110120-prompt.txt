@@ -1,0 +1,532 @@
+=== PROMPT #6 ===
+[Message 1 - user]
+# Churn Pattern Analysis
+
+You are a gaming analytics expert analyzing player churn patterns.
+
+## Context
+
+**Dataset**: decisionbox_features_prod
+**Exploration Queries**: 4
+
+## Project Profile
+
+null
+
+**IMPORTANT**: Use the profile above to understand the target audience, game mechanics, and business context. Tailor your churn pattern analysis to THIS specific game.
+
+## Your Task
+
+Analyze the query results below and identify **specific churn patterns** with exact numbers and percentages.
+
+## Required Output Format
+
+Respond with ONLY valid JSON (no markdown, no explanations):
+
+```json
+{
+  "insights": [
+    {
+      "name": "Specific descriptive name (e.g., 'Day 1 Post-Tutorial Churn')",
+      "description": "Detailed description with exact percentages and player counts.",
+      "severity": "critical|high|medium|low",
+      "affected_count": 2847,
+      "risk_score": 0.68,
+      "confidence": 0.85,
+      "metrics": {
+        "churn_rate": 0.68,
+        "avg_sessions_before_churn": 3.2,
+        "avg_ltv": 0.0
+      },
+      "indicators": [
+        "Session duration drop: 12.5min to 4.2min (-66%)",
+        "Only 32% return after Day 1"
+      ],
+      "target_segment": "New players who completed tutorial but churned within 72 hours"
+    }
+  ]
+}
+```
+
+## Quality Standards
+
+- **Name**: Be VERY specific - include time period, cohort, or segment
+- **Description**: Must include exact percentages, player counts, specific behaviors, time periods
+- **affected_count**: Actual count from data (COUNT(DISTINCT user_id)), not estimate
+- **risk_score**: 0.0-1.0 based on actual churn rate
+- **indicators**: 3-5 specific metrics with exact numbers
+- **Minimum affected**: Only include patterns affecting 50+ players
+
+## Important Rules
+
+1. **Use ONLY data from the queries below** - don't make up numbers
+2. **Be extremely specific** - exact percentages, counts, time periods
+3. **If no churn patterns found**, return `{"insights": []}`
+4. **CRITICAL - Validate user counts**: affected_count must be COUNT(DISTINCT user_id), NOT total row counts
+
+## Query Results
+
+[
+  {
+    "step": 1,
+    "timestamp": "2026-03-11T11:00:49.355101679Z",
+    "action": "query_data",
+    "thinking": "I need to understand the overall health of this match-3 game by looking at recent retention patterns. This will give me a baseline to understand if the game is performing well or has issues.",
+    "query": "SELECT cohort_date, cohort_size, day_1_retention, day_7_retention, day_30_retention, retention_quality_score FROM `decisionbox_features_prod.app_retention_cohorts_summary` WHERE app_id = '69b055c7f57d4e46add77be5' ORDER BY cohort_date DESC LIMIT 30",
+    "execution_time_ms": 688,
+    "llm_request": "",
+    "llm_response": "",
+    "is_insight": false
+  },
+  {
+    "step": 2,
+    "timestamp": "2026-03-11T11:00:57.995394479Z",
+    "action": "query_data",
+    "thinking": "The retention query returned no results. I need to verify this app_id exists in the dataset and see what tables actually contain data for this specific app.",
+    "query": "SELECT COUNT(*) as total_sessions, COUNT(DISTINCT user_id) as unique_users, MIN(start_time) as earliest_session, MAX(start_time) as latest_session FROM `decisionbox_features_prod.sessions` WHERE app_id = '69b055c7f57d4e46add77be5'",
+    "query_result": [
+      {
+        "earliest_session": null,
+        "latest_session": null,
+        "total_sessions": 0,
+        "unique_users": 0
+      }
+    ],
+    "row_count": 1,
+    "execution_time_ms": 515,
+    "llm_request": "",
+    "llm_response": "",
+    "is_insight": false
+  },
+  {
+    "step": 4,
+    "timestamp": "2026-03-11T11:01:12.328211925Z",
+    "action": "query_data",
+    "thinking": "Now I have the correct app_id (69298e53f3713168b72c23d8) which has substantial data. Let me start by analyzing recent retention patterns to understand the overall health of this match-3 game.",
+    "query": "SELECT cohort_date, cohort_size, day_1_retention, day_7_retention, day_30_retention, retention_quality_score FROM `decisionbox_features_prod.app_retention_cohorts_summary` WHERE app_id = '69298e53f3713168b72c23d8' ORDER BY cohort_date DESC LIMIT 30",
+    "query_result": [
+      {
+        "cohort_date": "2026-03-10",
+        "cohort_size": 40,
+        "day_1_retention": null,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0
+      },
+      {
+        "cohort_date": "2026-03-10",
+        "cohort_size": 15,
+        "day_1_retention": null,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0
+      },
+      {
+        "cohort_date": "2026-03-10",
+        "cohort_size": 3167,
+        "day_1_retention": null,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0
+      },
+      {
+        "cohort_date": "2026-03-10",
+        "cohort_size": 29,
+        "day_1_retention": null,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0
+      },
+      {
+        "cohort_date": "2026-03-10",
+        "cohort_size": 20,
+        "day_1_retention": null,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0
+      },
+      {
+        "cohort_date": "2026-03-10",
+        "cohort_size": 12,
+        "day_1_retention": null,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0
+      },
+      {
+        "cohort_date": "2026-03-10",
+        "cohort_size": 10,
+        "day_1_retention": null,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0
+      },
+      {
+        "cohort_date": "2026-03-10",
+        "cohort_size": 5473,
+        "day_1_retention": null,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0
+      },
+      {
+        "cohort_date": "2026-03-10",
+        "cohort_size": 22,
+        "day_1_retention": null,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0
+      },
+      {
+        "cohort_date": "2026-03-10",
+        "cohort_size": 13,
+        "day_1_retention": null,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0
+      },
+      {
+        "cohort_date": "2026-03-10",
+        "cohort_size": 11,
+        "day_1_retention": null,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0
+      },
+      {
+        "cohort_date": "2026-03-10",
+        "cohort_size": 103,
+        "day_1_retention": null,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0
+      },
+      {
+        "cohort_date": "2026-03-10",
+        "cohort_size": 20,
+        "day_1_retention": null,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0
+      },
+      {
+        "cohort_date": "2026-03-10",
+        "cohort_size": 12,
+        "day_1_retention": null,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0
+      },
+      {
+        "cohort_date": "2026-03-10",
+        "cohort_size": 230,
+        "day_1_retention": null,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0
+      },
+      {
+        "cohort_date": "2026-03-10",
+        "cohort_size": 50,
+        "day_1_retention": null,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 13,
+        "day_1_retention": null,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 11,
+        "day_1_retention": null,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 54,
+        "day_1_retention": 24.07,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 7.22
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 11,
+        "day_1_retention": null,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 20,
+        "day_1_retention": null,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 11,
+        "day_1_retention": null,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 11,
+        "day_1_retention": null,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 12,
+        "day_1_retention": null,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 51,
+        "day_1_retention": 1.96,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0.59
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 15,
+        "day_1_retention": null,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 15,
+        "day_1_retention": null,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 11,
+        "day_1_retention": 9.09,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 2.73
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 17,
+        "day_1_retention": 5.88,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 1.76
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 14,
+        "day_1_retention": 35.71,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 10.71
+      }
+    ],
+    "row_count": 30,
+    "execution_time_ms": 522,
+    "llm_request": "",
+    "llm_response": "",
+    "is_insight": false
+  },
+  {
+    "step": 5,
+    "timestamp": "2026-03-11T11:01:20.087402701Z",
+    "action": "query_data",
+    "thinking": "The most recent cohorts don't have retention data calculated yet since they're too new. I need to look at older cohorts that have had time to mature and show actual retention rates.",
+    "query": "SELECT cohort_date, cohort_size, day_1_retention, day_7_retention, day_30_retention, retention_quality_score FROM `decisionbox_features_prod.app_retention_cohorts_summary` WHERE app_id = '69298e53f3713168b72c23d8' AND day_1_retention IS NOT NULL ORDER BY cohort_date DESC LIMIT 20",
+    "query_result": [
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 31,
+        "day_1_retention": 6.45,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 1.94
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 68,
+        "day_1_retention": 4.41,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 1.32
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 28,
+        "day_1_retention": 7.14,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 2.14
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 27,
+        "day_1_retention": 7.41,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 2.22
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 54,
+        "day_1_retention": 24.07,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 7.22
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 39,
+        "day_1_retention": 5.13,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 1.54
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 40,
+        "day_1_retention": 5,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 1.5
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 60,
+        "day_1_retention": 8.33,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 2.5
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 15,
+        "day_1_retention": 6.67,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 2
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 12,
+        "day_1_retention": 8.33,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 2.5
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 121,
+        "day_1_retention": 8.26,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 2.48
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 17,
+        "day_1_retention": 5.88,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 1.76
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 28,
+        "day_1_retention": 3.57,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 1.07
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 51,
+        "day_1_retention": 1.96,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 0.59
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 11,
+        "day_1_retention": 9.09,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 2.73
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 48,
+        "day_1_retention": 8.33,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 2.5
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 32,
+        "day_1_retention": 6.25,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 1.88
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 50,
+        "day_1_retention": 4,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 1.2
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 11,
+        "day_1_retention": 9.09,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 2.73
+      },
+      {
+        "cohort_date": "2026-03-09",
+        "cohort_size": 14,
+        "day_1_retention": 35.71,
+        "day_30_retention": null,
+        "day_7_retention": null,
+        "retention_quality_score": 10.71
+      }
+    ],
+    "row_count": 20,
+    "execution_time_ms": 557,
+    "llm_request": "",
+    "llm_response": "",
+    "is_insight": false
+  }
+]
+
+Now analyze the data above and respond with valid JSON.
+

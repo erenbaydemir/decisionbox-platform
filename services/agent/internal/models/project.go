@@ -8,14 +8,13 @@ type Project struct {
 	ID          string `bson:"_id,omitempty" json:"id"`
 	Name        string `bson:"name" json:"name"`
 	Description string `bson:"description,omitempty" json:"description,omitempty"`
-	Domain      string `bson:"domain" json:"domain"`     // "gaming"
-	Category    string `bson:"category" json:"category"` // "match3"
+	Domain      string `bson:"domain" json:"domain"`
+	Category    string `bson:"category" json:"category"`
 
 	Warehouse WarehouseConfig `bson:"warehouse" json:"warehouse"`
 	LLM       LLMConfig       `bson:"llm" json:"llm"`
 	Schedule  ScheduleConfig  `bson:"schedule" json:"schedule"`
 
-	// Domain-specific profile (validated against domain pack JSON Schema)
 	Profile map[string]interface{} `bson:"profile,omitempty" json:"profile,omitempty"`
 
 	Status        string     `bson:"status" json:"status"`
@@ -30,13 +29,33 @@ type Project struct {
 type WarehouseConfig struct {
 	Provider  string `bson:"provider" json:"provider"`
 	ProjectID string `bson:"project_id,omitempty" json:"project_id,omitempty"`
-	Dataset   string `bson:"dataset" json:"dataset"`
 	Location  string `bson:"location,omitempty" json:"location,omitempty"`
 
+	// Datasets to explore. Supports multiple datasets in the same warehouse.
+	// BigQuery: ["events_prod", "decisionbox_features_prod"]
+	// The agent discovers schemas from ALL listed datasets.
+	Datasets []string `bson:"datasets" json:"datasets"`
+
+	// Deprecated: single dataset field. Use Datasets instead.
+	// Kept for backward compatibility — if set and Datasets is empty,
+	// treated as Datasets: [Dataset].
+	Dataset string `bson:"dataset,omitempty" json:"dataset,omitempty"`
+
 	// Optional: filter for multi-tenant warehouses.
-	// If set, all queries include WHERE <FilterField> = '<FilterValue>'.
 	FilterField string `bson:"filter_field,omitempty" json:"filter_field,omitempty"`
 	FilterValue string `bson:"filter_value,omitempty" json:"filter_value,omitempty"`
+}
+
+// GetDatasets returns the list of datasets to explore.
+// Handles backward compatibility with the single Dataset field.
+func (w *WarehouseConfig) GetDatasets() []string {
+	if len(w.Datasets) > 0 {
+		return w.Datasets
+	}
+	if w.Dataset != "" {
+		return []string{w.Dataset}
+	}
+	return nil
 }
 
 // LLMConfig holds LLM provider settings.

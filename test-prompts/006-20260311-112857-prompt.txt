@@ -1,0 +1,112 @@
+=== PROMPT #6 ===
+[Message 1 - user]
+# Churn Pattern Analysis
+
+You are a gaming analytics expert analyzing player churn patterns.
+
+## Context
+
+**Dataset**: events_prod, decisionbox_features_prod
+**Exploration Queries**: 3
+
+## Project Profile
+
+null
+
+**IMPORTANT**: Use the profile above to understand the target audience, game mechanics, and business context. Tailor your churn pattern analysis to THIS specific game.
+
+## Your Task
+
+Analyze the query results below and identify **specific churn patterns** with exact numbers and percentages.
+
+## Required Output Format
+
+Respond with ONLY valid JSON (no markdown, no explanations):
+
+```json
+{
+  "insights": [
+    {
+      "name": "Specific descriptive name (e.g., 'Day 1 Post-Tutorial Churn')",
+      "description": "Detailed description with exact percentages and player counts.",
+      "severity": "critical|high|medium|low",
+      "affected_count": 2847,
+      "risk_score": 0.68,
+      "confidence": 0.85,
+      "metrics": {
+        "churn_rate": 0.68,
+        "avg_sessions_before_churn": 3.2,
+        "avg_ltv": 0.0
+      },
+      "indicators": [
+        "Session duration drop: 12.5min to 4.2min (-66%)",
+        "Only 32% return after Day 1"
+      ],
+      "target_segment": "New players who completed tutorial but churned within 72 hours"
+    }
+  ]
+}
+```
+
+## Quality Standards
+
+- **Name**: Be VERY specific - include time period, cohort, or segment
+- **Description**: Must include exact percentages, player counts, specific behaviors, time periods
+- **affected_count**: Actual count from data (COUNT(DISTINCT user_id)), not estimate
+- **risk_score**: 0.0-1.0 based on actual churn rate
+- **indicators**: 3-5 specific metrics with exact numbers
+- **Minimum affected**: Only include patterns affecting 50+ players
+
+## Important Rules
+
+1. **Use ONLY data from the queries below** - don't make up numbers
+2. **Be extremely specific** - exact percentages, counts, time periods
+3. **If no churn patterns found**, return `{"insights": []}`
+4. **CRITICAL - Validate user counts**: affected_count must be COUNT(DISTINCT user_id), NOT total row counts
+
+## Query Results
+
+[
+  {
+    "step": 1,
+    "timestamp": "2026-03-11T11:28:27.846631341Z",
+    "action": "query_data",
+    "thinking": "I need to understand the basic user base size and cohort information for this app first. Since the app_id in the prompt seems incorrect (shows one ID but asks me to use a different one), I'll use the correct app_id from the task description.",
+    "query": "SELECT cohort_date, cohort_size FROM `events_prod.cohort_sizes` WHERE app_id = '69b055c7f57d4e46add77be5' ORDER BY cohort_date DESC",
+    "execution_time_ms": 580,
+    "llm_request": "",
+    "llm_response": "",
+    "is_insight": false
+  },
+  {
+    "step": 2,
+    "timestamp": "2026-03-11T11:28:33.152470645Z",
+    "action": "query_data",
+    "thinking": "Since there's no data for the app_id I tried, I need to see what app_ids are actually available in the dataset. This will help me understand if there's data for this specific app or if I need to use a different approach.",
+    "query": "SELECT DISTINCT app_id FROM `events_prod.cohort_sizes`",
+    "query_result": [
+      {
+        "app_id": "683067c941e446112e9489d5"
+      }
+    ],
+    "row_count": 1,
+    "execution_time_ms": 442,
+    "llm_request": "",
+    "llm_response": "",
+    "is_insight": false
+  },
+  {
+    "step": 5,
+    "timestamp": "2026-03-11T11:28:57.317000364Z",
+    "action": "query_data",
+    "thinking": "I can see this is a very active match-3 game with 315k+ users and comprehensive event tracking. The high volume of booster events (offered/declined) suggests a freemium model. Let me check retention patterns to understand player lifecycle and identify churn risks.",
+    "query": "SELECT cohort_date, days_after, retention_rate FROM `events_prod.daily_retention` WHERE app_id = '69298e53f3713168b72c23d8' AND days_after IN (1, 3, 7, 14, 30) ORDER BY cohort_date DESC, days_after ASC",
+    "execution_time_ms": 496,
+    "llm_request": "",
+    "llm_response": "",
+    "is_insight": false
+  }
+]
+
+Now analyze the data above and respond with valid JSON.
+

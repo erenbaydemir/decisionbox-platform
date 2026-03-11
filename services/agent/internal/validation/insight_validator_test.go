@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	gowarehouse "github.com/decisionbox-io/decisionbox/libs/go-common/warehouse"
-	"github.com/decisionbox-io/decisionbox/services/agent/internal/config"
 	"github.com/decisionbox-io/decisionbox/services/agent/internal/models"
 	"github.com/decisionbox-io/decisionbox/services/agent/internal/ai"
 	"github.com/decisionbox-io/decisionbox/services/agent/internal/testutil"
@@ -17,9 +16,7 @@ func newTestInsightValidator(t *testing.T) (*InsightValidator, *testutil.MockWar
 	llmProvider := testutil.NewMockLLMProvider()
 	wh := testutil.NewMockWarehouseProvider("test_dataset")
 
-	cfg := &config.Config{}
-	cfg.LLM.Model = "test-model"
-	aiClient, err := ai.New(cfg, llmProvider)
+	aiClient, err := ai.New(llmProvider, "test-model")
 	if err != nil {
 		t.Fatalf("failed to create AI client: %v", err)
 	}

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	gollm "github.com/decisionbox-io/decisionbox/libs/go-common/llm"
-	"github.com/decisionbox-io/decisionbox/services/agent/internal/config"
 	"github.com/decisionbox-io/decisionbox/services/agent/internal/debug"
 	logger "github.com/decisionbox-io/decisionbox/services/agent/internal/log"
 )
@@ -18,7 +17,6 @@ import (
 type Client struct {
 	provider     gollm.Provider
 	model        string
-	config       *config.Config
 	debugLogger  *debug.Logger
 	testMode     bool
 	promptCount  int
@@ -27,15 +25,12 @@ type Client struct {
 }
 
 // New creates a new AI client backed by an llm.Provider.
-func New(cfg *config.Config, provider gollm.Provider) (*Client, error) {
-	logger.WithFields(logger.Fields{
-		"model": cfg.LLM.Model,
-	}).Info("LLM client initialized")
+func New(provider gollm.Provider, model string) (*Client, error) {
+	logger.WithField("model", model).Info("LLM client initialized")
 
 	return &Client{
 		provider: provider,
-		model:    cfg.LLM.Model,
-		config:   cfg,
+		model:    model,
 	}, nil
 }
 

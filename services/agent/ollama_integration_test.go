@@ -158,10 +158,8 @@ func TestOllama_AIClient_Chat(t *testing.T) {
 	provider, cleanup := setupOllama(t)
 	defer cleanup()
 
-	cfg := &config.Config{}
-	cfg.LLM.Model = testOllamaModel
 
-	client, err := ai.New(cfg, provider)
+	client, err := ai.New(provider, testOllamaModel)
 	if err != nil {
 		t.Fatalf("AI client error: %v", err)
 	}
@@ -187,10 +185,8 @@ func TestOllama_AIClient_AnalysisPrompt(t *testing.T) {
 	provider, cleanup := setupOllama(t)
 	defer cleanup()
 
-	cfg := &config.Config{}
-	cfg.LLM.Model = testOllamaModel
 
-	client, err := ai.New(cfg, provider)
+	client, err := ai.New(provider, testOllamaModel)
 	if err != nil {
 		t.Fatalf("AI client error: %v", err)
 	}

@@ -365,9 +365,7 @@ func TestInteg_InsightValidator_WithBigQuery(t *testing.T) {
 		"SELECT COUNT(DISTINCT user_id) as count FROM `%s.sessions` WHERE app_id = 'test-app'",
 		testBQDataset)
 
-	cfg := &config.Config{}
-	cfg.LLM.Model = "test"
-	aiClient, _ := ai.New(cfg, llmProvider)
+	aiClient, _ := ai.New(llmProvider, "test-model")
 
 	v := validation.NewInsightValidator(validation.InsightValidatorOptions{
 		AIClient:  aiClient,

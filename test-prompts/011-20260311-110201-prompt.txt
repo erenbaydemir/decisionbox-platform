@@ -1,0 +1,146 @@
+=== PROMPT #11 ===
+[Message 1 - user]
+# Generate Actionable Recommendations
+
+You are a gaming analytics expert creating **specific, actionable recommendations** based on discovered patterns.
+
+## Context
+
+**Discovery Date**: 2026-03-11
+**Insights Found**: Total: 2 insights (churn: 2)
+
+## Project Profile
+
+null
+
+**CRITICAL**: Use the profile when creating recommendations. Only recommend items/boosters that exist in the profile. Use correct names and mechanics.
+
+## Your Task
+
+Generate **specific, actionable recommendations** that can be immediately implemented. Each recommendation must include:
+
+1. **Clear action** - What exactly to do
+2. **Target segment** - Who to target (specific criteria)
+3. **Expected impact** - Quantified expected results
+4. **Implementation steps** - How to implement
+
+## Output Format
+
+Respond with ONLY valid JSON:
+
+```json
+{
+  "recommendations": [
+    {
+      "title": "Action - Context (e.g., 'Send Extra Lives After 3 Failures on Level 42')",
+      "description": "Detailed explanation with numbers. Problem + Impact + Why this matters.",
+      "category": "churn|engagement|monetization|difficulty",
+      "priority": 5,
+      "target_segment": "Exact segment definition with criteria",
+      "segment_size": 1234,
+      "expected_impact": {
+        "metric": "retention_rate|revenue|engagement|completion_rate",
+        "estimated_improvement": "15-20%",
+        "reasoning": "Why we expect this with supporting data"
+      },
+      "actions": [
+        "Specific step 1",
+        "Specific step 2",
+        "Specific step 3"
+      ],
+      "confidence": 0.85
+    }
+  ]
+}
+```
+
+## Requirements
+
+### DO create recommendations that are:
+- **Specific**: Exact numbers, levels, timeframes, thresholds
+- **Actionable**: Developer knows exactly what to do
+- **Measurable**: Clear success metrics
+
+### DON'T create recommendations that are:
+- Generic ("improve retention", "segment analysis")
+- Vague ("monitor metrics", "A/B test")
+- Missing numbers/specifics
+
+### Priority Scale:
+- **5 (Critical)**: Many players affected OR high revenue impact
+- **4 (High)**: Significant impact, implement soon
+- **3 (Medium)**: Moderate impact
+- **2 (Low)**: Nice to have
+- **1 (Optional)**: Minor improvement
+
+## Discovered Insights
+
+[
+  {
+    "id": "",
+    "analysis_area": "churn",
+    "name": "Critical Day 1 Retention Failure Across All Cohorts",
+    "description": "Across 20 analyzed cohorts totaling 738 new players, Day 1 retention rates are critically low, ranging from 1.96% to 35.71% with most cohorts below 10%. The majority of players (over 90%) are churning within 24 hours of first session.",
+    "severity": "critical",
+    "affected_count": 738,
+    "risk_score": 0.92,
+    "confidence": 0.95,
+    "metrics": {
+      "avg_ltv": 0,
+      "avg_sessions_before_churn": 1,
+      "churn_rate": 0.92
+    },
+    "indicators": [
+      "Average Day 1 retention: 7.8% (92.2% churn rate)",
+      "Best performing cohort: 35.71% retention (14 players)",
+      "Worst performing cohort: 1.96% retention (51 players)",
+      "16 out of 20 cohorts show retention below 10%",
+      "No Day 7 or Day 30 retention data indicates severe early churn"
+    ],
+    "target_segment": "All new player cohorts from March 9, 2026 showing immediate post-installation churn",
+    "discovered_at": "2026-03-11T11:01:35.149574244Z",
+    "validation": {
+      "status": "error",
+      "original_count": 738,
+      "query": "WITH cohorts AS (\n  SELECT \n    user_id,\n    DATE(first_session_timestamp) as cohort_date,\n    first_session_timestamp,\n    last_session_timestamp,\n    DATE_DIFF(DATE(last_session_timestamp), DATE(first_session_timestamp), DAY) as days_retained\n  FROM `decisionbox_features_prod`\n  WHERE app_id = '69298e53f3713168b72c23d8'\n    AND DATE(first_session_timestamp) = '2026-03-09'\n),\nday1_retention AS (\n  SELECT \n    cohort_date,\n    COUNT(DISTINCT user_id) as total_users,\n    COUNT(DISTINCT CASE WHEN days_retained \u003e= 1 THEN user_id END) as day1_retained_users,\n    SAFE_DIVIDE(COUNT(DISTINCT CASE WHEN days_retained \u003e= 1 THEN user_id END), COUNT(DISTINCT user_id)) as day1_retention_rate\n  FROM cohorts\n  GROUP BY cohort_date\n  HAVING COUNT(DISTINCT user_id) \u003e= 10\n)\nSELECT \n  COUNT(DISTINCT c.user_id) as affected_count,\n  AVG(r.day1_retention_rate) as avg_day1_retention,\n  COUNT(*) as cohort_count,\n  MIN(r.day1_retention_rate) as min_retention_rate,\n  MAX(r.day1_retention_rate) as max_retention_rate,\n  COUNTIF(r.day1_retention_rate \u003c 0.10) as cohorts_below_10_percent\nFROM cohorts c\nJOIN day1_retention r ON c.cohort_date = r.cohort_date",
+      "reasoning": "Verification query failed: bigquery: query failed: googleapi: Error 400: Table \"decisionbox_features_prod\" must be qualified with a dataset (e.g. dataset.table)., invalid",
+      "validated_at": "2026-03-11T11:01:36.224247379Z"
+    }
+  },
+  {
+    "id": "",
+    "analysis_area": "churn",
+    "name": "Small Cohort Variance in Retention Performance",
+    "description": "Smaller cohorts (10-20 players) show higher but inconsistent Day 1 retention rates, while larger cohorts consistently perform poorly. The 14-player cohort achieved 35.71% retention versus 1.96% for the 51-player cohort, suggesting acquisition source quality issues.",
+    "severity": "high",
+    "affected_count": 121,
+    "risk_score": 0.75,
+    "confidence": 0.78,
+    "metrics": {
+      "avg_ltv": 0,
+      "avg_sessions_before_churn": 1,
+      "churn_rate": 0.75
+    },
+    "indicators": [
+      "Cohorts \u003c30 players: average 10.2% Day 1 retention",
+      "Cohorts 30+ players: average 6.4% Day 1 retention",
+      "Largest cohort (121 players): 8.26% retention",
+      "High variance suggests inconsistent user acquisition quality",
+      "Retention quality scores range from 0.59 to 10.71"
+    ],
+    "target_segment": "Variable-size acquisition cohorts showing inconsistent early engagement patterns",
+    "discovered_at": "2026-03-11T11:01:35.149574444Z",
+    "validation": {
+      "status": "error",
+      "original_count": 121,
+      "query": "WITH cohort_sizes AS (\n  SELECT \n    DATE(created_at) as cohort_date,\n    COUNT(DISTINCT user_id) as cohort_size\n  FROM `decisionbox_features_prod`\n  WHERE app_id = '69298e53f3713168b72c23d8'\n  GROUP BY DATE(created_at)\n),\nday1_retention AS (\n  SELECT \n    DATE(u1.created_at) as cohort_date,\n    COUNT(DISTINCT u1.user_id) as cohort_size,\n    COUNT(DISTINCT CASE WHEN u2.user_id IS NOT NULL THEN u1.user_id END) as retained_users,\n    SAFE_DIVIDE(COUNT(DISTINCT CASE WHEN u2.user_id IS NOT NULL THEN u1.user_id END), COUNT(DISTINCT u1.user_id)) * 100 as day1_retention_rate\n  FROM `decisionbox_features_prod` u1\n  LEFT JOIN `decisionbox_features_prod` u2 \n    ON u1.user_id = u2.user_id \n    AND DATE(u2.created_at) = DATE_ADD(DATE(u1.created_at), INTERVAL 1 DAY)\n  WHERE u1.app_id = '69298e53f3713168b72c23d8'\n  GROUP BY DATE(u1.created_at)\n)\nSELECT COUNT(DISTINCT user_id) as affected_count\nFROM `decisionbox_features_prod` f\nJOIN day1_retention d ON DATE(f.created_at) = d.cohort_date\nWHERE f.app_id = '69298e53f3713168b72c23d8'\n  AND (\n    (d.cohort_size \u003c 30 AND d.day1_retention_rate \u003e 5) OR\n    (d.cohort_size \u003e= 30 AND d.day1_retention_rate \u003c 10) OR\n    d.cohort_size = 121\n  )",
+      "reasoning": "Verification query failed: bigquery: query failed: googleapi: Error 400: Table \"decisionbox_features_prod\" must be qualified with a dataset (e.g. dataset.table)., invalid",
+      "validated_at": "2026-03-11T11:01:44.773305106Z"
+    }
+  }
+]
+
+---
+
+Generate 3-8 specific, actionable recommendations. Prioritize by impact and urgency.
+

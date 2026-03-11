@@ -6,17 +6,8 @@ import (
 )
 
 func TestLoadDefaults(t *testing.T) {
-	// Set required env vars
 	os.Setenv("MONGODB_URI", "mongodb://localhost:27017")
-	os.Setenv("LLM_API_KEY", "test-key")
-	os.Setenv("WAREHOUSE_DATASET", "test_dataset")
-	os.Setenv("WAREHOUSE_PROJECT_ID", "test-project")
-	defer func() {
-		os.Unsetenv("MONGODB_URI")
-		os.Unsetenv("LLM_API_KEY")
-		os.Unsetenv("WAREHOUSE_DATASET")
-		os.Unsetenv("WAREHOUSE_PROJECT_ID")
-	}()
+	defer os.Unsetenv("MONGODB_URI")
 
 	cfg, err := Load()
 	if err != nil {
@@ -24,103 +15,27 @@ func TestLoadDefaults(t *testing.T) {
 	}
 
 	if cfg.Service.Name != "decisionbox-agent" {
-		t.Errorf("Name = %q, want %q", cfg.Service.Name, "decisionbox-agent")
+		t.Errorf("Name = %q", cfg.Service.Name)
 	}
-	if cfg.LLM.Provider != "claude" {
-		t.Errorf("LLM.Provider = %q, want %q", cfg.LLM.Provider, "claude")
+	if cfg.MongoDB.Database != "decisionbox" {
+		t.Errorf("Database = %q", cfg.MongoDB.Database)
 	}
-	if cfg.Warehouse.Provider != "bigquery" {
-		t.Errorf("Warehouse.Provider = %q, want %q", cfg.Warehouse.Provider, "bigquery")
-	}
-	if cfg.Discovery.MaxSteps != 100 {
-		t.Errorf("MaxSteps = %d, want 100", cfg.Discovery.MaxSteps)
+	if cfg.LLM.MaxRetries != 3 {
+		t.Errorf("MaxRetries = %d", cfg.LLM.MaxRetries)
 	}
 }
 
 func TestValidateMissingMongoDB(t *testing.T) {
 	cfg := &Config{}
-	cfg.LLM.APIKey = "test"
-	cfg.Warehouse.Dataset = "test"
-
 	err := cfg.Validate()
 	if err == nil {
 		t.Error("should fail without MONGODB_URI")
 	}
 }
 
-func TestValidateMissingLLMKey_Claude(t *testing.T) {
-	cfg := &Config{}
-	cfg.MongoDB.URI = "mongodb://localhost"
-	cfg.Warehouse.Dataset = "test"
-	cfg.LLM.Provider = "claude"
-
-	err := cfg.Validate()
-	if err == nil {
-		t.Error("should fail without LLM_API_KEY for claude provider")
-	}
-}
-
-func TestValidateLLMKey_NotRequired_VertexAI(t *testing.T) {
-	cfg := &Config{}
-	cfg.MongoDB.URI = "mongodb://localhost"
-	cfg.Warehouse.Dataset = "test"
-	cfg.Warehouse.Provider = "bigquery"
-	cfg.Warehouse.ProjectID = "test"
-	cfg.LLM.Provider = "vertex-ai"
-	// No API key — should pass
-
-	err := cfg.Validate()
-	if err != nil {
-		t.Errorf("vertex-ai should not require LLM_API_KEY: %v", err)
-	}
-}
-
-func TestValidateLLMKey_NotRequired_Ollama(t *testing.T) {
-	cfg := &Config{}
-	cfg.MongoDB.URI = "mongodb://localhost"
-	cfg.Warehouse.Dataset = "test"
-	cfg.Warehouse.Provider = "bigquery"
-	cfg.Warehouse.ProjectID = "test"
-	cfg.LLM.Provider = "ollama"
-
-	err := cfg.Validate()
-	if err != nil {
-		t.Errorf("ollama should not require LLM_API_KEY: %v", err)
-	}
-}
-
-func TestValidateMissingDataset(t *testing.T) {
-	cfg := &Config{}
-	cfg.MongoDB.URI = "mongodb://localhost"
-	cfg.LLM.APIKey = "test"
-
-	err := cfg.Validate()
-	if err == nil {
-		t.Error("should fail without WAREHOUSE_DATASET")
-	}
-}
-
-func TestValidateBigQueryRequiresProjectID(t *testing.T) {
-	cfg := &Config{}
-	cfg.MongoDB.URI = "mongodb://localhost"
-	cfg.LLM.APIKey = "test"
-	cfg.Warehouse.Dataset = "test"
-	cfg.Warehouse.Provider = "bigquery"
-	cfg.Warehouse.ProjectID = "" // missing
-
-	err := cfg.Validate()
-	if err == nil {
-		t.Error("should fail for BigQuery without project_id")
-	}
-}
-
 func TestValidateSuccess(t *testing.T) {
 	cfg := &Config{}
 	cfg.MongoDB.URI = "mongodb://localhost"
-	cfg.LLM.APIKey = "test"
-	cfg.Warehouse.Dataset = "test"
-	cfg.Warehouse.Provider = "bigquery"
-	cfg.Warehouse.ProjectID = "my-project"
 
 	err := cfg.Validate()
 	if err != nil {
@@ -140,9 +55,33 @@ func TestIsProduction(t *testing.T) {
 	if !cfg.IsProduction() {
 		t.Error("prod should be production")
 	}
+}
 
-	cfg.Service.Environment = "production"
-	if !cfg.IsProduction() {
-		t.Error("production should be production")
+func TestLLMAPIKeyOptional(t *testing.T) {
+	// API key is not required at config level — it's optional
+	// (vertex-ai, ollama don't need it)
+	cfg := &Config{}
+	cfg.MongoDB.URI = "mongodb://localhost"
+
+	err := cfg.Validate()
+	if err != nil {
+		t.Errorf("should pass without LLM_API_KEY: %v", err)
+	}
+}
+
+func TestLoadWithAPIKey(t *testing.T) {
+	os.Setenv("MONGODB_URI", "mongodb://localhost:27017")
+	os.Setenv("LLM_API_KEY", "test-key")
+	defer func() {
+		os.Unsetenv("MONGODB_URI")
+		os.Unsetenv("LLM_API_KEY")
+	}()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.LLM.APIKey != "test-key" {
+		t.Errorf("APIKey = %q", cfg.LLM.APIKey)
 	}
 }

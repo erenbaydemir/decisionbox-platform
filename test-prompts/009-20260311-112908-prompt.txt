@@ -1,0 +1,93 @@
+=== PROMPT #9 ===
+[Message 1 - user]
+# Booster Usage Analysis
+
+You are a gaming analytics expert analyzing booster/power-up usage patterns in a match-3 puzzle game.
+
+## Context
+
+**Dataset**: events_prod, decisionbox_features_prod
+**Exploration Queries**: 1
+
+## Project Profile
+
+null
+
+**IMPORTANT**: Use the profile to understand the available boosters, their mechanics, and monetization model.
+
+## Your Task
+
+Analyze the query results and identify **booster usage patterns** that reveal opportunities or problems.
+
+## Required Output Format
+
+Respond with ONLY valid JSON:
+
+```json
+{
+  "insights": [
+    {
+      "name": "Hint Booster Depletion Before Level 15",
+      "description": "78% of players exhaust their free Hint boosters before reaching level 15. Players who run out of hints have 2.3x higher churn rate. 1,500 players affected in last 30 days.",
+      "severity": "high",
+      "affected_count": 1500,
+      "risk_score": 0.65,
+      "confidence": 0.8,
+      "metrics": {
+        "booster_name": "Hint",
+        "depletion_level": 15,
+        "depletion_rate": 0.78,
+        "churn_multiplier": 2.3,
+        "pattern_type": "depletion_risk"
+      },
+      "indicators": [
+        "78% deplete hints before level 15",
+        "2.3x higher churn after depletion",
+        "Only 12% purchase hint packs"
+      ],
+      "target_segment": "Players who depleted hints before level 15"
+    }
+  ]
+}
+```
+
+## What to Look For
+
+- **Depletion patterns**: When do players run out of each booster type?
+- **Usage vs level difficulty**: Do booster usage spikes correlate with hard levels?
+- **Purchase triggers**: What events lead to booster purchases?
+- **Free vs paid usage**: Ratio of earned boosters vs purchased
+- **Churn correlation**: Does booster depletion predict churn?
+- **Ad-earned boosters**: How many boosters come from rewarded ads?
+
+## pattern_type values:
+- **depletion_risk**: Players running out of boosters at critical moments
+- **underutilized**: Boosters available but not used (awareness issue)
+- **purchase_opportunity**: High usage of free boosters, low purchase rate
+- **effectiveness**: Booster usage strongly correlates with level completion
+
+## Important Rules
+
+1. **Use ONLY data from the queries** - don't make up numbers
+2. **If no booster patterns found**, return `{"insights": []}`
+3. **Minimum 50 players** for a pattern to be significant
+4. **CRITICAL**: affected_count = COUNT(DISTINCT user_id)
+
+## Query Results
+
+[
+  {
+    "step": 5,
+    "timestamp": "2026-03-11T11:28:57.317000364Z",
+    "action": "query_data",
+    "thinking": "I can see this is a very active match-3 game with 315k+ users and comprehensive event tracking. The high volume of booster events (offered/declined) suggests a freemium model. Let me check retention patterns to understand player lifecycle and identify churn risks.",
+    "query": "SELECT cohort_date, days_after, retention_rate FROM `events_prod.daily_retention` WHERE app_id = '69298e53f3713168b72c23d8' AND days_after IN (1, 3, 7, 14, 30) ORDER BY cohort_date DESC, days_after ASC",
+    "execution_time_ms": 496,
+    "llm_request": "",
+    "llm_response": "",
+    "is_insight": false
+  }
+]
+
+Now analyze and respond with valid JSON.
+

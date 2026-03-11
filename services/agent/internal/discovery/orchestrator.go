@@ -40,6 +40,7 @@ type Orchestrator struct {
 	domain      string
 	category    string
 	profile     map[string]interface{}
+	datasets    []string
 	filterField string
 	filterValue string
 }
@@ -55,12 +56,13 @@ type OrchestratorOptions struct {
 	DebugLogRepo  *database.DebugLogRepository
 
 	RunRepo         *database.RunRepository
-	RunID           string // if set, agent writes live status to this run
+	RunID           string
 
 	ProjectID       string
 	Domain          string
 	Category        string
 	Profile         map[string]interface{}
+	Datasets        []string
 	FilterField     string
 	FilterValue     string
 	EnableDebugLogs bool
@@ -125,6 +127,7 @@ func NewOrchestrator(opts OrchestratorOptions) *Orchestrator {
 		domain:             opts.Domain,
 		category:           opts.Category,
 		profile:            opts.Profile,
+		datasets:           opts.Datasets,
 		filterField:        opts.FilterField,
 		filterValue:        opts.FilterValue,
 	}
@@ -154,13 +157,15 @@ func (o *Orchestrator) RunDiscovery(ctx context.Context, opts DiscoveryOptions) 
 
 	// Build filter clause
 	filterClause := o.buildFilterClause()
-	dataset := o.warehouse.GetDataset()
 
-	// Initialize query executor
+	// Datasets info for prompts — show all available datasets
+	datasetsStr := strings.Join(o.datasets, ", ")
+
+	// Initialize query executor (uses the warehouse provider which can query any dataset)
 	sqlFixer := ai.NewSQLFixer(ai.SQLFixerOptions{
 		Client:       o.aiClient,
 		SQLFixPrompt: o.warehouse.SQLFixPrompt(),
-		Dataset:      dataset,
+		Dataset:      datasetsStr,
 		Filter:       filterClause,
 	})
 	executor := queryexec.NewQueryExecutor(queryexec.QueryExecutorOptions{
@@ -172,12 +177,12 @@ func (o *Orchestrator) RunDiscovery(ctx context.Context, opts DiscoveryOptions) 
 		FilterValue: o.filterValue,
 	})
 
-	// Initialize schema discovery
+	// Initialize schema discovery for all datasets
 	o.schemaDiscovery = NewSchemaDiscovery(SchemaDiscoveryOptions{
 		Warehouse: o.warehouse,
 		Executor:  executor,
 		ProjectID: o.projectID,
-		Dataset:   dataset,
+		Datasets:  o.datasets,
 		Filter:    filterClause,
 	})
 
@@ -206,7 +211,7 @@ func (o *Orchestrator) RunDiscovery(ctx context.Context, opts DiscoveryOptions) 
 
 	// Prepare exploration prompt with substitutions
 	explorationPrompt := prompts.Exploration
-	explorationPrompt = strings.ReplaceAll(explorationPrompt, "{{DATASET}}", dataset)
+	explorationPrompt = strings.ReplaceAll(explorationPrompt, "{{DATASET}}", datasetsStr)
 	explorationPrompt = strings.ReplaceAll(explorationPrompt, "{{SCHEMA_INFO}}", string(schemaJSON))
 	explorationPrompt = strings.ReplaceAll(explorationPrompt, "{{FILTER}}", filterClause)
 	explorationPrompt = strings.ReplaceAll(explorationPrompt, "{{FILTER_CONTEXT}}", o.buildFilterContext())
@@ -222,12 +227,12 @@ func (o *Orchestrator) RunDiscovery(ctx context.Context, opts DiscoveryOptions) 
 		Client:   o.aiClient,
 		Executor: executor,
 		MaxSteps: opts.MaxSteps,
-		Dataset:  dataset,
+		Dataset:  datasetsStr,
 	})
 
 	explorationResult, err := o.explorationEngine.Explore(ctx, ai.ExplorationContext{
 		ProjectID:     o.projectID,
-		Dataset:       dataset,
+		Dataset:       datasetsStr,
 		InitialPrompt: explorationPrompt,
 	})
 	if err != nil {
@@ -263,7 +268,7 @@ func (o *Orchestrator) RunDiscovery(ctx context.Context, opts DiscoveryOptions) 
 		// Prepare analysis prompt
 		queryResultsJSON, _ := json.MarshalIndent(relevantQueries, "", "  ")
 		prompt := areaPrompt
-		prompt = strings.ReplaceAll(prompt, "{{DATASET}}", dataset)
+		prompt = strings.ReplaceAll(prompt, "{{DATASET}}", datasetsStr)
 		prompt = strings.ReplaceAll(prompt, "{{TOTAL_QUERIES}}", fmt.Sprintf("%d", len(relevantQueries)))
 		prompt = strings.ReplaceAll(prompt, "{{PROFILE}}", string(profileJSON))
 		prompt = strings.ReplaceAll(prompt, "{{QUERY_RESULTS}}", string(queryResultsJSON))
@@ -339,7 +344,7 @@ func (o *Orchestrator) RunDiscovery(ctx context.Context, opts DiscoveryOptions) 
 	// Phase 5: Generate recommendations
 	applog.Info("Phase 5: Generating recommendations")
 	o.statusReporter.SetPhase(ctx, models.PhaseRecommendations, "Generating actionable recommendations...", 85)
-	recommendations, recStep := o.generateRecommendations(ctx, prompts.Recommendations, allInsights, profileJSON, dataset)
+	recommendations, recStep := o.generateRecommendations(ctx, prompts.Recommendations, allInsights, profileJSON, datasetsStr)
 
 	// Validate recommendation segment sizes
 	var recValidationResults []models.ValidationResult
@@ -434,7 +439,7 @@ func (o *Orchestrator) generateRecommendations(
 	promptTemplate string,
 	insights []models.Insight,
 	profileJSON []byte,
-	dataset string,
+	datasetsStr string,
 ) ([]models.Recommendation, *models.RecommendationStep) {
 	step := &models.RecommendationStep{
 		RunAt:        time.Now(),

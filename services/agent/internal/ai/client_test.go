@@ -4,17 +4,14 @@ import (
 	"context"
 	"testing"
 
-	"github.com/decisionbox-io/decisionbox/services/agent/internal/config"
 	"github.com/decisionbox-io/decisionbox/services/agent/internal/testutil"
 )
 
 func TestNewClient(t *testing.T) {
-	cfg := &config.Config{}
-	cfg.LLM.Model = "test-model"
 
 	provider := testutil.NewMockLLMProvider()
 
-	client, err := New(cfg, provider)
+	client, err := New(provider, "test-model")
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}
@@ -24,11 +21,9 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestChat(t *testing.T) {
-	cfg := &config.Config{}
-	cfg.LLM.Model = "test-model"
 
 	provider := testutil.NewMockLLMProvider()
-	client, _ := New(cfg, provider)
+	client, _ := New(provider, "test-model")
 
 	result, err := client.Chat(context.Background(), "test prompt", "system prompt", 1000)
 	if err != nil {
@@ -57,13 +52,11 @@ func TestChat(t *testing.T) {
 }
 
 func TestChatError(t *testing.T) {
-	cfg := &config.Config{}
-	cfg.LLM.Model = "test-model"
 
 	provider := testutil.NewMockLLMProvider()
 	provider.Error = context.DeadlineExceeded
 
-	client, _ := New(cfg, provider)
+	client, _ := New(provider, "test-model")
 
 	_, err := client.Chat(context.Background(), "test", "", 1000)
 	if err == nil {
@@ -72,11 +65,9 @@ func TestChatError(t *testing.T) {
 }
 
 func TestSetTestMode(t *testing.T) {
-	cfg := &config.Config{}
-	cfg.LLM.Model = "test-model"
 
 	provider := testutil.NewMockLLMProvider()
-	client, _ := New(cfg, provider)
+	client, _ := New(provider, "test-model")
 
 	client.SetTestMode(true)
 	if !client.testMode {
@@ -90,11 +81,9 @@ func TestSetTestMode(t *testing.T) {
 }
 
 func TestSetDebugLogger(t *testing.T) {
-	cfg := &config.Config{}
-	cfg.LLM.Model = "test-model"
 
 	provider := testutil.NewMockLLMProvider()
-	client, _ := New(cfg, provider)
+	client, _ := New(provider, "test-model")
 
 	client.SetDebugLogger(nil)
 	if client.debugLogger != nil {

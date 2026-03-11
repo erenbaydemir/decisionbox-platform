@@ -2,8 +2,6 @@ package models
 
 import "time"
 
-// Project represents a DecisionBox project. Same schema as agent's model
-// (both read/write the same MongoDB "projects" collection).
 type Project struct {
 	ID          string `bson:"_id,omitempty" json:"id"`
 	Name        string `bson:"name" json:"name"`
@@ -26,12 +24,13 @@ type Project struct {
 }
 
 type WarehouseConfig struct {
-	Provider    string `bson:"provider" json:"provider"`
-	ProjectID   string `bson:"project_id,omitempty" json:"project_id,omitempty"`
-	Dataset     string `bson:"dataset" json:"dataset"`
-	Location    string `bson:"location,omitempty" json:"location,omitempty"`
-	FilterField string `bson:"filter_field,omitempty" json:"filter_field,omitempty"`
-	FilterValue string `bson:"filter_value,omitempty" json:"filter_value,omitempty"`
+	Provider    string   `bson:"provider" json:"provider"`
+	ProjectID   string   `bson:"project_id,omitempty" json:"project_id,omitempty"`
+	Datasets    []string `bson:"datasets" json:"datasets"`
+	Dataset     string   `bson:"dataset,omitempty" json:"dataset,omitempty"` // backward compat
+	Location    string   `bson:"location,omitempty" json:"location,omitempty"`
+	FilterField string   `bson:"filter_field,omitempty" json:"filter_field,omitempty"`
+	FilterValue string   `bson:"filter_value,omitempty" json:"filter_value,omitempty"`
 }
 
 type LLMConfig struct {
