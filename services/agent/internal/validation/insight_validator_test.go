@@ -255,6 +255,94 @@ func TestExtractCountNilResult(t *testing.T) {
 	}
 }
 
+func TestExtractCountFromRows_CountField(t *testing.T) {
+	rows := []map[string]interface{}{{"count": int64(42)}}
+	got := extractCountFromRows(rows)
+	if got != 42 {
+		t.Errorf("got %d, want 42", got)
+	}
+}
+
+func TestExtractCountFromRows_FallbackToFirstNumeric(t *testing.T) {
+	rows := []map[string]interface{}{{"total_players": int64(99)}}
+	got := extractCountFromRows(rows)
+	if got != 99 {
+		t.Errorf("got %d, want 99", got)
+	}
+}
+
+func TestExtractCountFromRows_EmptyRows(t *testing.T) {
+	got := extractCountFromRows(nil)
+	if got != 0 {
+		t.Errorf("got %d, want 0", got)
+	}
+	got = extractCountFromRows([]map[string]interface{}{})
+	if got != 0 {
+		t.Errorf("got %d, want 0 for empty slice", got)
+	}
+}
+
+func TestExtractCountFromRows_ZeroCountField(t *testing.T) {
+	// count=0 should return 0, not fall back to another field
+	rows := []map[string]interface{}{{"count": int64(0), "other": int64(99)}}
+	got := extractCountFromRows(rows)
+	if got != 0 {
+		t.Errorf("got %d, want 0 (count field is 0)", got)
+	}
+}
+
+func TestInsightValidatorQueryCleanup_NestedCodeBlocks(t *testing.T) {
+	v, wh, llmProvider := newTestInsightValidator(t)
+
+	// Multiple code blocks — should extract content from first pair
+	llmProvider.DefaultResponse.Content = "Here is the query:\n```sql\nSELECT COUNT(DISTINCT user_id) AS count FROM `test_dataset.sessions`\n```\nAnd another block:\n```\nignore this\n```"
+
+	wh.DefaultResult = &gowarehouse.QueryResult{
+		Columns: []string{"count"},
+		Rows:    []map[string]interface{}{{"count": int64(50)}},
+	}
+
+	insights := []models.Insight{
+		{ID: "1", Name: "Test", AffectedCount: 50, AnalysisArea: "churn"},
+	}
+
+	results := v.ValidateInsights(context.Background(), insights)
+	if results[0].Status == "error" {
+		t.Errorf("should not error — got: %s", results[0].QueryError)
+	}
+}
+
+func TestInsightValidatorQueryCleanup_NoSELECT(t *testing.T) {
+	v, _, llmProvider := newTestInsightValidator(t)
+
+	// LLM returns non-SQL response
+	llmProvider.DefaultResponse.Content = "I cannot generate a query for this insight."
+
+	insights := []models.Insight{
+		{ID: "1", Name: "Test", AffectedCount: 100, AnalysisArea: "churn"},
+	}
+
+	results := v.ValidateInsights(context.Background(), insights)
+	if results[0].Status != "error" {
+		t.Errorf("status = %q, want 'error' for non-SQL response", results[0].Status)
+	}
+}
+
+func TestInsightValidator_ZeroAffectedCount(t *testing.T) {
+	v, _, llmProvider := newTestInsightValidator(t)
+
+	llmProvider.DefaultResponse.Content = "SELECT COUNT(DISTINCT user_id) AS count FROM `test_dataset.sessions`"
+
+	insights := []models.Insight{
+		{ID: "1", Name: "Test", AffectedCount: 0, AnalysisArea: "churn"},
+	}
+
+	results := v.ValidateInsights(context.Background(), insights)
+	if results[0].Status != "confirmed" {
+		t.Errorf("status = %q, want 'confirmed' (zero affected = nothing to verify)", results[0].Status)
+	}
+}
+
 func TestToInt(t *testing.T) {
 	tests := []struct {
 		input interface{}

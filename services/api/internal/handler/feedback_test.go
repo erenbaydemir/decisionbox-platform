@@ -79,6 +79,56 @@ func TestFeedbackHandler_Submit_InvalidBody(t *testing.T) {
 	}
 }
 
+func TestFeedbackHandler_Submit_ExplorationStepValid(t *testing.T) {
+	h := NewFeedbackHandler(nil)
+
+	// exploration_step should pass validation (will panic at DB, not 400)
+	req := httptest.NewRequest("POST", "/api/v1/discoveries/run1/feedback",
+		strings.NewReader(`{"target_type":"exploration_step","target_id":"3","rating":"like"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("runId", "run1")
+	w := httptest.NewRecorder()
+
+	defer func() { recover() }() // nil repo will panic
+	h.Submit(w, req)
+
+	if w.Code == http.StatusBadRequest {
+		t.Error("exploration_step should pass validation")
+	}
+}
+
+func TestFeedbackHandler_Submit_EmptyRating(t *testing.T) {
+	h := NewFeedbackHandler(nil)
+
+	req := httptest.NewRequest("POST", "/api/v1/discoveries/run1/feedback",
+		strings.NewReader(`{"target_type":"insight","target_id":"0","rating":""}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("runId", "run1")
+	w := httptest.NewRecorder()
+
+	h.Submit(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("empty rating: status = %d, want 400", w.Code)
+	}
+}
+
+func TestFeedbackHandler_Submit_EmptyTargetID(t *testing.T) {
+	h := NewFeedbackHandler(nil)
+
+	req := httptest.NewRequest("POST", "/api/v1/discoveries/run1/feedback",
+		strings.NewReader(`{"target_type":"insight","target_id":"","rating":"like"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("runId", "run1")
+	w := httptest.NewRecorder()
+
+	h.Submit(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("empty target_id: status = %d, want 400", w.Code)
+	}
+}
+
 func TestFeedbackHandler_List_NilRepo(t *testing.T) {
 	h := NewFeedbackHandler(nil)
 

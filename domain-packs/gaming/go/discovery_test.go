@@ -127,6 +127,45 @@ func TestPromptsBase(t *testing.T) {
 	if _, ok := prompts.AnalysisAreas["levels"]; ok {
 		t.Error("base prompts should not include 'levels' area")
 	}
+
+	// BaseContext should be loaded
+	if prompts.BaseContext == "" {
+		t.Error("BaseContext is empty — base_context.md not loaded")
+	}
+	if !strings.Contains(prompts.BaseContext, "{{PROFILE}}") {
+		t.Error("BaseContext missing {{PROFILE}} placeholder")
+	}
+	if !strings.Contains(prompts.BaseContext, "{{PREVIOUS_CONTEXT}}") {
+		t.Error("BaseContext missing {{PREVIOUS_CONTEXT}} placeholder")
+	}
+}
+
+func TestPromptsBase_NoProfileInExploration(t *testing.T) {
+	pack := NewPack()
+	prompts := pack.Prompts("")
+
+	// {{PROFILE}} and {{PREVIOUS_CONTEXT}} should NOT be in exploration prompt
+	// (they come from base_context which is prepended by the orchestrator)
+	if strings.Contains(prompts.Exploration, "{{PROFILE}}") {
+		t.Error("exploration prompt should not contain {{PROFILE}} — moved to base_context")
+	}
+	if strings.Contains(prompts.Exploration, "{{PREVIOUS_CONTEXT}}") {
+		t.Error("exploration prompt should not contain {{PREVIOUS_CONTEXT}} — moved to base_context")
+	}
+}
+
+func TestPromptsBase_NoProfileInAnalysis(t *testing.T) {
+	pack := NewPack()
+	prompts := pack.Prompts("match3")
+
+	for id, content := range prompts.AnalysisAreas {
+		if strings.Contains(content, "{{PROFILE}}") {
+			t.Errorf("analysis prompt %q should not contain {{PROFILE}} — moved to base_context", id)
+		}
+		if strings.Contains(content, "{{PREVIOUS_CONTEXT}}") {
+			t.Errorf("analysis prompt %q should not contain {{PREVIOUS_CONTEXT}} — moved to base_context", id)
+		}
+	}
 }
 
 func TestPromptsMatch3Merge(t *testing.T) {

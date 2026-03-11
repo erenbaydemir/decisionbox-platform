@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -158,5 +159,106 @@ func TestUpdatedAtChanges(t *testing.T) {
 
 	if !ctx.UpdatedAt.After(initial) {
 		t.Error("UpdatedAt should be updated after AddNote")
+	}
+}
+
+// --- UpdatePatterns ---
+
+func TestUpdatePatterns_NewInsight(t *testing.T) {
+	ctx := NewProjectContext("proj-123")
+	insights := []Insight{
+		{Name: "High Churn", AnalysisArea: "churn", Description: "Players leaving"},
+	}
+
+	ctx.UpdatePatterns(insights)
+
+	if len(ctx.HistoricalPatterns) != 1 {
+		t.Fatalf("patterns = %d, want 1", len(ctx.HistoricalPatterns))
+	}
+	p := ctx.HistoricalPatterns[0]
+	if p.PatternID != "churn:High Churn" {
+		t.Errorf("patternID = %q", p.PatternID)
+	}
+	if p.SeenCount != 1 {
+		t.Errorf("seenCount = %d, want 1", p.SeenCount)
+	}
+	if p.Status != "active" {
+		t.Errorf("status = %q, want active", p.Status)
+	}
+}
+
+func TestUpdatePatterns_RecurringInsight(t *testing.T) {
+	ctx := NewProjectContext("proj-123")
+	insights := []Insight{
+		{Name: "High Churn", AnalysisArea: "churn"},
+	}
+
+	ctx.UpdatePatterns(insights)
+	ctx.UpdatePatterns(insights) // seen again
+
+	if len(ctx.HistoricalPatterns) != 1 {
+		t.Fatalf("patterns = %d, want 1 (deduped)", len(ctx.HistoricalPatterns))
+	}
+	if ctx.HistoricalPatterns[0].SeenCount != 2 {
+		t.Errorf("seenCount = %d, want 2", ctx.HistoricalPatterns[0].SeenCount)
+	}
+	if ctx.HistoricalPatterns[0].Status != "recurring" {
+		t.Errorf("status = %q, want recurring", ctx.HistoricalPatterns[0].Status)
+	}
+}
+
+func TestUpdatePatterns_MultipleInsights(t *testing.T) {
+	ctx := NewProjectContext("proj-123")
+	insights := []Insight{
+		{Name: "High Churn", AnalysisArea: "churn"},
+		{Name: "Low Revenue", AnalysisArea: "monetization"},
+		{Name: "Level 45 Spike", AnalysisArea: "levels"},
+	}
+
+	ctx.UpdatePatterns(insights)
+
+	if len(ctx.HistoricalPatterns) != 3 {
+		t.Errorf("patterns = %d, want 3", len(ctx.HistoricalPatterns))
+	}
+}
+
+func TestUpdatePatterns_Limit(t *testing.T) {
+	ctx := NewProjectContext("proj-123")
+
+	// Add 201 unique insights — should cap at 200
+	for i := 0; i < 201; i++ {
+		ctx.UpdatePatterns([]Insight{
+			{Name: fmt.Sprintf("Insight %d", i), AnalysisArea: "test"},
+		})
+	}
+
+	if len(ctx.HistoricalPatterns) > 200 {
+		t.Errorf("patterns = %d, should be capped at 200", len(ctx.HistoricalPatterns))
+	}
+}
+
+// --- Summary types ---
+
+func TestInsightSummary_Fields(t *testing.T) {
+	s := InsightSummary{
+		Name: "High Churn", AnalysisArea: "churn", Severity: "critical",
+		AffectedCount: 500, Date: "2026-03-10",
+	}
+	if s.Name != "High Churn" || s.Severity != "critical" || s.AffectedCount != 500 {
+		t.Error("fields not set correctly")
+	}
+}
+
+func TestFeedbackSummary_Fields(t *testing.T) {
+	s := FeedbackSummary{InsightName: "Bad", Rating: "dislike", Comment: "wrong metric"}
+	if s.Rating != "dislike" || s.Comment != "wrong metric" {
+		t.Error("fields not set correctly")
+	}
+}
+
+func TestRecommendationSummary_Fields(t *testing.T) {
+	s := RecommendationSummary{Title: "Send Lives", Category: "churn", Priority: 1}
+	if s.Priority != 1 || s.Category != "churn" {
+		t.Error("fields not set correctly")
 	}
 }

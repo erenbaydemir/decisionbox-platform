@@ -884,6 +884,117 @@ func TestInteg_Feedback_Validation(t *testing.T) {
 	}
 }
 
+func TestInteg_Feedback_ExplorationStep(t *testing.T) {
+	// exploration_step is a valid target type
+	resp := doRequest(t, "POST", "/api/v1/discoveries/test-step-run/feedback", map[string]interface{}{
+		"target_type": "exploration_step",
+		"target_id":   "3",
+		"rating":      "like",
+	})
+	if resp.StatusCode != 200 {
+		t.Errorf("exploration_step feedback: status = %d, want 200", resp.StatusCode)
+	}
+
+	// Verify it's stored
+	resp = doRequest(t, "GET", "/api/v1/discoveries/test-step-run/feedback", nil)
+	r := decodeResponse(t, resp)
+	items := r.Data.([]interface{})
+	found := false
+	for _, item := range items {
+		fb := item.(map[string]interface{})
+		if fb["target_type"] == "exploration_step" && fb["target_id"] == "3" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("exploration_step feedback not found")
+	}
+}
+
+func TestInteg_ProjectUpdate_PreservesPrompts(t *testing.T) {
+	// Create project (prompts auto-seeded)
+	resp := doRequest(t, "POST", "/api/v1/projects", map[string]interface{}{
+		"name": "merge-test", "domain": "gaming", "category": "match3",
+		"warehouse": map[string]interface{}{"provider": "bigquery", "project_id": "test", "datasets": []string{"ds"}},
+		"llm":       map[string]interface{}{"provider": "claude", "model": "test"},
+	})
+	r := decodeResponse(t, resp)
+	projectID := r.Data.(map[string]interface{})["id"].(string)
+
+	// Verify prompts were seeded
+	resp = doRequest(t, "GET", "/api/v1/projects/"+projectID+"/prompts", nil)
+	r = decodeResponse(t, resp)
+	prompts := r.Data.(map[string]interface{})
+	if prompts["exploration"] == "" {
+		t.Fatal("prompts not seeded on create")
+	}
+	areas := prompts["analysis_areas"].(map[string]interface{})
+	if len(areas) == 0 {
+		t.Fatal("analysis areas not seeded")
+	}
+
+	// Update project settings WITHOUT sending prompts
+	resp = doRequest(t, "PUT", "/api/v1/projects/"+projectID, map[string]interface{}{
+		"name": "merge-test-updated",
+		"warehouse": map[string]interface{}{"provider": "bigquery", "project_id": "test2", "datasets": []string{"ds2"}},
+		"llm":       map[string]interface{}{"provider": "claude", "model": "test2"},
+	})
+	if resp.StatusCode != 200 {
+		t.Fatalf("update status = %d", resp.StatusCode)
+	}
+
+	// Verify prompts are STILL present (not wiped)
+	resp = doRequest(t, "GET", "/api/v1/projects/"+projectID+"/prompts", nil)
+	r = decodeResponse(t, resp)
+	prompts = r.Data.(map[string]interface{})
+	if prompts["exploration"] == "" {
+		t.Error("prompts wiped after settings update — merge logic broken")
+	}
+	areas = prompts["analysis_areas"].(map[string]interface{})
+	if len(areas) == 0 {
+		t.Error("analysis areas wiped after settings update")
+	}
+
+	// Verify name was updated
+	resp = doRequest(t, "GET", "/api/v1/projects/"+projectID, nil)
+	r = decodeResponse(t, resp)
+	proj := r.Data.(map[string]interface{})
+	if proj["name"] != "merge-test-updated" {
+		t.Errorf("name = %v, want merge-test-updated", proj["name"])
+	}
+}
+
+func TestInteg_ProjectUpdate_PreservesProfile(t *testing.T) {
+	// Create project with profile
+	resp := doRequest(t, "POST", "/api/v1/projects", map[string]interface{}{
+		"name": "profile-merge", "domain": "gaming", "category": "match3",
+		"warehouse": map[string]interface{}{"provider": "bigquery", "project_id": "test", "datasets": []string{"ds"}},
+		"llm":       map[string]interface{}{"provider": "claude", "model": "test"},
+		"profile":   map[string]interface{}{"basic_info": map[string]interface{}{"genre": "puzzle"}},
+	})
+	r := decodeResponse(t, resp)
+	projectID := r.Data.(map[string]interface{})["id"].(string)
+
+	// Update only name (no profile in body)
+	resp = doRequest(t, "PUT", "/api/v1/projects/"+projectID, map[string]interface{}{
+		"name": "profile-merge-updated",
+		"warehouse": map[string]interface{}{"provider": "bigquery", "project_id": "test", "datasets": []string{"ds"}},
+		"llm":       map[string]interface{}{"provider": "claude", "model": "test"},
+	})
+	if resp.StatusCode != 200 {
+		t.Fatalf("update status = %d", resp.StatusCode)
+	}
+
+	// Verify profile preserved
+	resp = doRequest(t, "GET", "/api/v1/projects/"+projectID, nil)
+	r = decodeResponse(t, resp)
+	proj := r.Data.(map[string]interface{})
+	profile := proj["profile"].(map[string]interface{})
+	if profile["basic_info"] == nil {
+		t.Error("profile wiped after update without profile field")
+	}
+}
+
 // --- CORS ---
 
 func TestInteg_CORS(t *testing.T) {
