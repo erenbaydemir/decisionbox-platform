@@ -40,10 +40,14 @@ Respond with ONLY valid JSON (no markdown, no explanations):
         "Session duration drop: 12.5min to 4.2min (-66%)",
         "Only 32% return after Day 1"
       ],
-      "target_segment": "New players who completed tutorial but churned within 72 hours"
+      "target_segment": "New players who completed tutorial but churned within 72 hours",
+      "source_steps": [1, 3, 5]
     }
   ]
 }
+```
+
+- **source_steps**: List the step numbers from the query results below that this insight is based on. Each query result has a "step" field — cite the specific steps you used to draw this conclusion. This is critical for transparency.
 ```
 
 ## Quality Standards

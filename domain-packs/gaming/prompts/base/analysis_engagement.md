@@ -42,11 +42,14 @@ Respond with ONLY valid JSON (no markdown, no explanations):
         "Sessions per week: 5.2 to 3.8 (-27%)",
         "Affects 1,240 high-value users"
       ],
-      "target_segment": "power_users_20plus_sessions"
+      "target_segment": "power_users_20plus_sessions",
+      "source_steps": [2, 4]
     }
   ]
 }
 ```
+
+- **source_steps**: List the step numbers from the query results that this insight is based on. Each query result has a "step" field — cite the exact steps.
 
 ## Quality Standards
 

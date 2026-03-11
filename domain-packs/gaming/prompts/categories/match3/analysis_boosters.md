@@ -43,11 +43,14 @@ Respond with ONLY valid JSON:
         "2.3x higher churn after depletion",
         "Only 12% purchase hint packs"
       ],
-      "target_segment": "Players who depleted hints before level 15"
+      "target_segment": "Players who depleted hints before level 15",
+      "source_steps": [4, 8]
     }
   ]
 }
 ```
+
+- **source_steps**: List the step numbers from the query results that this insight is based on. Each query result has a "step" field — cite the exact steps.
 
 ## What to Look For
 

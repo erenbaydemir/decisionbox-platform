@@ -44,11 +44,14 @@ Respond with ONLY valid JSON:
         "12.5 average attempts",
         "Success rate only 22%"
       ],
-      "target_segment": "Players reaching level 42"
+      "target_segment": "Players reaching level 42",
+      "source_steps": [2, 7]
     }
   ]
 }
 ```
+
+- **source_steps**: List the step numbers from the query results that this insight is based on. Each query result has a "step" field — cite the exact steps.
 
 ## Quality Standards
 

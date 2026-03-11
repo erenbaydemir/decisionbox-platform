@@ -42,11 +42,14 @@ Respond with ONLY valid JSON (no markdown, no explanations):
         "10+ sessions average",
         "Zero purchases to date"
       ],
-      "target_segment": "Engaged non-payers with high booster usage"
+      "target_segment": "Engaged non-payers with high booster usage",
+      "source_steps": [3, 6]
     }
   ]
 }
 ```
+
+- **source_steps**: List the step numbers from the query results that this insight is based on. Each query result has a "step" field — cite the exact steps.
 
 ## Quality Standards
 

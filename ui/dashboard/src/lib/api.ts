@@ -122,6 +122,7 @@ export interface Insight {
   metrics: Record<string, unknown>;
   indicators: string[];
   target_segment: string;
+  source_steps?: number[];
   validation?: InsightValidation;
   discovered_at: string;
 }

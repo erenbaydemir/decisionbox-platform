@@ -40,6 +40,7 @@ type Insight struct {
 	Metrics       map[string]interface{} `bson:"metrics,omitempty" json:"metrics,omitempty"`
 	Indicators    []string               `bson:"indicators,omitempty" json:"indicators,omitempty"`
 	TargetSegment string                 `bson:"target_segment,omitempty" json:"target_segment,omitempty"`
+	SourceSteps   []int                  `bson:"source_steps,omitempty" json:"source_steps,omitempty"`
 	Validation    *InsightValidation     `bson:"validation,omitempty" json:"validation,omitempty"`
 	DiscoveredAt  time.Time              `bson:"discovered_at" json:"discovered_at"`
 }

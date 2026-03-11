@@ -76,6 +76,10 @@ type Insight struct {
 
 	TargetSegment string `bson:"target_segment,omitempty" json:"target_segment,omitempty"`
 
+	// Source exploration steps that this insight is based on.
+	// Set by the LLM during analysis — cites which exploration queries it used.
+	SourceSteps []int `bson:"source_steps,omitempty" json:"source_steps,omitempty"`
+
 	SQLMetadata  *SQLMetadata `bson:"sql_metadata,omitempty" json:"sql_metadata,omitempty"`
 	DiscoveredAt time.Time    `bson:"discovered_at" json:"discovered_at"`
 
