@@ -108,7 +108,15 @@ export default function ProjectPage() {
 
         {/* Live Run Status */}
         {run && (run.status === 'running' || run.status === 'pending') && (
-          <LiveRunStatus run={run} />
+          <LiveRunStatus run={run} onCancel={async () => {
+            try {
+              await api.cancelRun(run.id);
+              setRun({ ...run, status: 'cancelled' });
+              notifications.show({ title: 'Cancelled', message: 'Discovery run cancelled', color: 'orange' });
+            } catch (e: unknown) {
+              notifications.show({ title: 'Error', message: (e as Error).message, color: 'red' });
+            }
+          }} />
         )}
 
         {/* Completed Run Summary */}
@@ -218,7 +226,7 @@ export default function ProjectPage() {
 
 // --- Live Run Status ---
 
-function LiveRunStatus({ run }: { run: DiscoveryRunStatus }) {
+function LiveRunStatus({ run, onCancel }: { run: DiscoveryRunStatus; onCancel: () => void }) {
   const phaseIcon: Record<string, React.ReactNode> = {
     init: <IconDatabase size={14} />,
     schema_discovery: <IconDatabase size={14} />,
@@ -235,7 +243,12 @@ function LiveRunStatus({ run }: { run: DiscoveryRunStatus }) {
           <Loader size="sm" />
           <Title order={4}>Discovery Running</Title>
         </Group>
-        <Badge color="blue" variant="light">{run.phase}</Badge>
+        <Group>
+          <Badge color="blue" variant="light">{run.phase}</Badge>
+          <Button size="xs" variant="light" color="red" onClick={onCancel}>
+            Cancel
+          </Button>
+        </Group>
       </Group>
 
       <Progress value={run.progress} mb="sm" animated />

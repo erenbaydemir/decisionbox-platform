@@ -48,14 +48,44 @@ func TestValidateMissingMongoDB(t *testing.T) {
 	}
 }
 
-func TestValidateMissingLLMKey(t *testing.T) {
+func TestValidateMissingLLMKey_Claude(t *testing.T) {
 	cfg := &Config{}
 	cfg.MongoDB.URI = "mongodb://localhost"
 	cfg.Warehouse.Dataset = "test"
+	cfg.LLM.Provider = "claude"
 
 	err := cfg.Validate()
 	if err == nil {
-		t.Error("should fail without LLM_API_KEY")
+		t.Error("should fail without LLM_API_KEY for claude provider")
+	}
+}
+
+func TestValidateLLMKey_NotRequired_VertexAI(t *testing.T) {
+	cfg := &Config{}
+	cfg.MongoDB.URI = "mongodb://localhost"
+	cfg.Warehouse.Dataset = "test"
+	cfg.Warehouse.Provider = "bigquery"
+	cfg.Warehouse.ProjectID = "test"
+	cfg.LLM.Provider = "vertex-ai"
+	// No API key — should pass
+
+	err := cfg.Validate()
+	if err != nil {
+		t.Errorf("vertex-ai should not require LLM_API_KEY: %v", err)
+	}
+}
+
+func TestValidateLLMKey_NotRequired_Ollama(t *testing.T) {
+	cfg := &Config{}
+	cfg.MongoDB.URI = "mongodb://localhost"
+	cfg.Warehouse.Dataset = "test"
+	cfg.Warehouse.Provider = "bigquery"
+	cfg.Warehouse.ProjectID = "test"
+	cfg.LLM.Provider = "ollama"
+
+	err := cfg.Validate()
+	if err != nil {
+		t.Errorf("ollama should not require LLM_API_KEY: %v", err)
 	}
 }
 

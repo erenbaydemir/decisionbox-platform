@@ -242,6 +242,8 @@ export const api = {
     request<{ status: string; message: string; run_id?: string }>(`/api/v1/projects/${projectId}/discover`, { method: 'POST' }),
   getRun: (runId: string) =>
     request<DiscoveryRunStatus>(`/api/v1/runs/${runId}`),
+  cancelRun: (runId: string) =>
+    request<{ status: string; message: string }>(`/api/v1/runs/${runId}`, { method: 'DELETE' }),
   listDiscoveries: (projectId: string) =>
     request<DiscoveryResult[]>(`/api/v1/projects/${projectId}/discoveries`),
   getLatestDiscovery: (projectId: string) =>

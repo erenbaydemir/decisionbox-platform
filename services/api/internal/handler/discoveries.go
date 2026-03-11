@@ -24,10 +24,11 @@ type DiscoveriesHandler struct {
 	repo        *database.DiscoveryRepository
 	projectRepo *database.ProjectRepository
 	runRepo     *database.RunRepository
+	tracker     *ProcessTracker
 }
 
-func NewDiscoveriesHandler(repo *database.DiscoveryRepository, projectRepo *database.ProjectRepository, runRepo *database.RunRepository) *DiscoveriesHandler {
-	return &DiscoveriesHandler{repo: repo, projectRepo: projectRepo, runRepo: runRepo}
+func NewDiscoveriesHandler(repo *database.DiscoveryRepository, projectRepo *database.ProjectRepository, runRepo *database.RunRepository, tracker *ProcessTracker) *DiscoveriesHandler {
+	return &DiscoveriesHandler{repo: repo, projectRepo: projectRepo, runRepo: runRepo, tracker: tracker}
 }
 
 // List returns discovery results for a project.
@@ -136,15 +137,19 @@ func (h *DiscoveriesHandler) TriggerDiscovery(w http.ResponseWriter, r *http.Req
 	)
 
 	if err := cmd.Start(); err != nil {
-		// Mark run as failed
 		h.runRepo.Fail(r.Context(), runID, "failed to start: "+err.Error())
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to start agent: %s", err.Error()))
 		return
 	}
 
-	// Wait in background and mark failed if agent exits with error
+	// Track the process so we can cancel it
+	h.tracker.Track(runID, cmd.Process)
+
+	// Wait in background, clean up when done
 	go func() {
-		if err := cmd.Wait(); err != nil {
+		err := cmd.Wait()
+		h.tracker.Remove(runID)
+		if err != nil {
 			h.runRepo.Fail(context.Background(), runID, "agent exited with error: "+err.Error())
 		}
 	}()
@@ -207,4 +212,41 @@ func (h *DiscoveriesHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, run)
+}
+
+// CancelRun cancels a running discovery.
+// DELETE /api/v1/runs/{runId}
+func (h *DiscoveriesHandler) CancelRun(w http.ResponseWriter, r *http.Request) {
+	runID := r.PathValue("runId")
+
+	run, err := h.runRepo.GetByID(r.Context(), runID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to get run: "+err.Error())
+		return
+	}
+	if run == nil {
+		writeError(w, http.StatusNotFound, "run not found")
+		return
+	}
+
+	if run.Status != "running" && run.Status != "pending" {
+		writeError(w, http.StatusBadRequest, "run is not active (status: "+run.Status+")")
+		return
+	}
+
+	// Kill the subprocess if it's tracked
+	killed := h.tracker.Kill(runID)
+
+	// Mark as cancelled in MongoDB
+	h.runRepo.Cancel(r.Context(), runID)
+
+	msg := "Run cancelled"
+	if killed {
+		msg = "Run cancelled and agent process killed"
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":  "cancelled",
+		"message": msg,
+	})
 }

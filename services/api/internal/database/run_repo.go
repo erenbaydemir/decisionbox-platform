@@ -98,6 +98,52 @@ func (r *RunRepository) Fail(ctx context.Context, runID string, errMsg string) e
 	return err
 }
 
+// Cancel marks a run as cancelled.
+func (r *RunRepository) Cancel(ctx context.Context, runID string) error {
+	oid, err := primitive.ObjectIDFromHex(runID)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now()
+	update := bson.M{
+		"$set": bson.M{
+			"status":       "cancelled",
+			"phase_detail": "Cancelled by user",
+			"completed_at": now,
+			"updated_at":   now,
+		},
+	}
+
+	_, err = r.col.UpdateByID(ctx, oid, update)
+	return err
+}
+
+// CleanupStaleRuns marks any pending/running runs as failed.
+// Called on API startup to clean up runs from previous container lifecycle.
+func (r *RunRepository) CleanupStaleRuns(ctx context.Context) (int, error) {
+	filter := bson.M{
+		"status": bson.M{"$in": []string{"pending", "running"}},
+	}
+
+	now := time.Now()
+	update := bson.M{
+		"$set": bson.M{
+			"status":       "failed",
+			"error":        "stale: API restarted while run was in progress",
+			"phase_detail": "Failed: API restarted during discovery",
+			"completed_at": now,
+			"updated_at":   now,
+		},
+	}
+
+	result, err := r.col.UpdateMany(ctx, filter, update)
+	if err != nil {
+		return 0, err
+	}
+	return int(result.ModifiedCount), nil
+}
+
 // GetRunningByProject checks if there's an active run for a project.
 func (r *RunRepository) GetRunningByProject(ctx context.Context, projectID string) (*models.DiscoveryRun, error) {
 	filter := bson.M{
