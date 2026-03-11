@@ -3,11 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
-  Alert, Button, Card, Checkbox, Group, Loader, MultiSelect, NumberInput, Select,
-  Stack, Switch, Text, TextInput, Textarea, Title,
+  ActionIcon, Alert, Button, Card, Checkbox, CloseButton, Group, Loader, MultiSelect,
+  NumberInput, Select, Stack, Switch, Text, TextInput, Textarea, Title,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconAlertCircle, IconArrowLeft, IconCheck } from '@tabler/icons-react';
+import { IconAlertCircle, IconArrowLeft, IconCheck, IconPlus } from '@tabler/icons-react';
 import Shell from '@/components/layout/AppShell';
 import { api, Project, ProviderMeta, ConfigField } from '@/lib/api';
 
@@ -244,23 +244,26 @@ function ProfileEditor({ schema, profile, onChange }: {
           items?: Record<string, unknown>;
         };
 
-        // Array sections (boosters, iap_packages, etc.) — render as JSON editor
+        // Array of objects (boosters, iap_packages, lootboxes)
+        if (sec.type === 'array' && sec.items && (sec.items as Record<string, unknown>).type === 'object') {
+          const items = (Array.isArray(profile[sectionKey]) ? profile[sectionKey] : []) as Record<string, unknown>[];
+          const itemSchema = sec.items as { properties?: Record<string, unknown> };
+          return (
+            <ArrayOfObjectsEditor key={sectionKey} title={sec.title || sectionKey}
+              itemSchema={itemSchema} items={items}
+              onChange={(newItems) => updateSection(sectionKey, newItems)} />
+          );
+        }
+
+        // Simple array (e.g., array of strings)
         if (sec.type === 'array') {
-          const currentVal = profile[sectionKey];
-          const jsonStr = currentVal ? JSON.stringify(currentVal, null, 2) : '[]';
+          const items = (Array.isArray(profile[sectionKey]) ? profile[sectionKey] : []) as string[];
           return (
             <div key={sectionKey}>
               <Text size="sm" fw={600} mb="xs">{sec.title || sectionKey}</Text>
-              <Textarea minRows={4} maxRows={12} autosize size="xs"
-                description="JSON array — each item is an object with the fields shown in the schema"
-                value={jsonStr}
-                onChange={(e) => {
-                  try {
-                    const parsed = JSON.parse(e.target.value);
-                    updateSection(sectionKey, parsed);
-                  } catch { /* ignore parse errors while typing */ }
-                }}
-                styles={{ input: { fontFamily: 'monospace', fontSize: 11 } }} />
+              <TextInput size="xs" description="Comma-separated values"
+                value={items.join(', ')}
+                onChange={(e) => updateSection(sectionKey, e.target.value.split(',').map(s => s.trim()).filter(Boolean))} />
             </div>
           );
         }
@@ -271,51 +274,130 @@ function ProfileEditor({ schema, profile, onChange }: {
           <div key={sectionKey}>
             <Text size="sm" fw={600} mb="xs">{sec.title || sectionKey}</Text>
             <Stack gap="xs">
-              {Object.entries(sec.properties).map(([fieldKey, fieldSchema]) => {
-                const fs = fieldSchema as {
-                  type?: string; title?: string; description?: string;
-                  enum?: string[]; items?: { enum?: string[] };
-                };
-                const value = (profile[sectionKey] || {})[fieldKey];
-
-                if (fs.type === 'string' && fs.enum) {
-                  return (
-                    <Select key={fieldKey} label={fs.title || fieldKey} description={fs.description}
-                      data={fs.enum} value={(value as string) || null} clearable size="xs"
-                      onChange={(v) => updateField(sectionKey, fieldKey, v || '')} />
-                  );
-                }
-                if (fs.type === 'array' && fs.items?.enum) {
-                  return (
-                    <MultiSelect key={fieldKey} label={fs.title || fieldKey} description={fs.description}
-                      data={fs.items.enum} value={(value as string[]) || []} size="xs"
-                      onChange={(v) => updateField(sectionKey, fieldKey, v)} />
-                  );
-                }
-                if (fs.type === 'boolean') {
-                  return (
-                    <Checkbox key={fieldKey} label={fs.title || fieldKey} description={fs.description}
-                      checked={!!value} size="xs"
-                      onChange={(e) => updateField(sectionKey, fieldKey, e.currentTarget.checked)} />
-                  );
-                }
-                if (fs.type === 'number' || fs.type === 'integer') {
-                  return (
-                    <NumberInput key={fieldKey} label={fs.title || fieldKey} description={fs.description}
-                      value={(value as number) ?? ''} size="xs"
-                      onChange={(v) => updateField(sectionKey, fieldKey, v)} />
-                  );
-                }
-                return (
-                  <TextInput key={fieldKey} label={fs.title || fieldKey} description={fs.description}
-                    value={(value as string) || ''} size="xs"
-                    onChange={(e) => updateField(sectionKey, fieldKey, e.target.value)} />
-                );
-              })}
+              {Object.entries(sec.properties).map(([fieldKey, fieldSchema]) => (
+                <SchemaField key={fieldKey} fieldKey={fieldKey} fieldSchema={fieldSchema}
+                  value={(profile[sectionKey] || {})[fieldKey]}
+                  onChange={(v) => updateField(sectionKey, fieldKey, v)} />
+              ))}
             </Stack>
           </div>
         );
       })}
     </Stack>
+  );
+}
+
+// Renders a single field from a JSON Schema property
+function SchemaField({ fieldKey, fieldSchema, value, onChange }: {
+  fieldKey: string; fieldSchema: unknown; value: unknown;
+  onChange: (v: unknown) => void;
+}) {
+  const fs = fieldSchema as {
+    type?: string; title?: string; description?: string;
+    enum?: string[]; items?: { type?: string; enum?: string[] };
+    additionalProperties?: { type?: string };
+  };
+
+  if (fs.type === 'string' && fs.enum) {
+    return (
+      <Select label={fs.title || fieldKey} description={fs.description}
+        data={fs.enum} value={(value as string) || null} clearable size="xs"
+        onChange={(v) => onChange(v || '')} />
+    );
+  }
+  if (fs.type === 'array' && fs.items?.enum) {
+    return (
+      <MultiSelect label={fs.title || fieldKey} description={fs.description}
+        data={fs.items.enum} value={(value as string[]) || []} size="xs"
+        onChange={(v) => onChange(v)} />
+    );
+  }
+  if (fs.type === 'array' && fs.items?.type === 'string') {
+    const items = (Array.isArray(value) ? value : []) as string[];
+    return (
+      <TextInput label={fs.title || fieldKey} description={fs.description || 'Comma-separated'}
+        value={items.join(', ')} size="xs"
+        onChange={(e) => onChange(e.target.value.split(',').map(s => s.trim()).filter(Boolean))} />
+    );
+  }
+  if (fs.type === 'object' && fs.additionalProperties) {
+    // Key-value map (e.g., IAP contents: { coins: 100, gems: 5 })
+    const obj = (value || {}) as Record<string, unknown>;
+    const jsonStr = Object.keys(obj).length > 0 ? JSON.stringify(obj) : '';
+    return (
+      <TextInput label={fs.title || fieldKey} description={fs.description || 'JSON object, e.g. {"coins": 100}'}
+        value={jsonStr} size="xs" styles={{ input: { fontFamily: 'monospace', fontSize: 11 } }}
+        onChange={(e) => { try { onChange(JSON.parse(e.target.value || '{}')); } catch { /* typing */ } }} />
+    );
+  }
+  if (fs.type === 'boolean') {
+    return (
+      <Checkbox label={fs.title || fieldKey} description={fs.description}
+        checked={!!value} size="xs"
+        onChange={(e) => onChange(e.currentTarget.checked)} />
+    );
+  }
+  if (fs.type === 'number' || fs.type === 'integer') {
+    return (
+      <NumberInput label={fs.title || fieldKey} description={fs.description}
+        value={(value as number) ?? ''} size="xs"
+        onChange={(v) => onChange(v)} />
+    );
+  }
+  return (
+    <TextInput label={fs.title || fieldKey} description={fs.description}
+      value={(value as string) || ''} size="xs"
+      onChange={(e) => onChange(e.target.value)} />
+  );
+}
+
+// Renders repeatable items for array-of-objects (boosters, IAP packages, lootboxes)
+function ArrayOfObjectsEditor({ title, itemSchema, items, onChange }: {
+  title: string;
+  itemSchema: { properties?: Record<string, unknown> };
+  items: Record<string, unknown>[];
+  onChange: (items: Record<string, unknown>[]) => void;
+}) {
+  const addItem = () => onChange([...items, {}]);
+  const removeItem = (idx: number) => onChange(items.filter((_, i) => i !== idx));
+  const updateItem = (idx: number, field: string, value: unknown) => {
+    const updated = [...items];
+    updated[idx] = { ...updated[idx], [field]: value };
+    onChange(updated);
+  };
+
+  const fields = itemSchema.properties || {};
+
+  return (
+    <div>
+      <Group justify="space-between" mb="xs">
+        <Text size="sm" fw={600}>{title} ({items.length})</Text>
+        <ActionIcon variant="light" size="sm" onClick={addItem}>
+          <IconPlus size={14} />
+        </ActionIcon>
+      </Group>
+      <Stack gap="xs">
+        {items.map((item, idx) => (
+          <Card key={idx} withBorder p="xs" radius="sm" bg="var(--mantine-color-gray-0)">
+            <Group justify="space-between" mb={4}>
+              <Text size="xs" c="dimmed">#{idx + 1}</Text>
+              <CloseButton size="xs" onClick={() => removeItem(idx)} />
+            </Group>
+            <Group grow gap="xs" wrap="wrap">
+              {Object.entries(fields).map(([fieldKey, fieldSchema]) => (
+                <SchemaField key={fieldKey} fieldKey={fieldKey} fieldSchema={fieldSchema}
+                  value={item[fieldKey]}
+                  onChange={(v) => updateItem(idx, fieldKey, v)} />
+              ))}
+            </Group>
+          </Card>
+        ))}
+        {items.length === 0 && (
+          <Text size="xs" c="dimmed" ta="center" py="xs">
+            No items. Click + to add.
+          </Text>
+        )}
+      </Stack>
+    </div>
   );
 }
