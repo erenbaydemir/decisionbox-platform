@@ -22,21 +22,11 @@ services:
     ports:
       - "8080:8080"
     environment:
-      # API config
       - MONGODB_URI=mongodb://mongodb:27017
       - MONGODB_DB=decisionbox
       - PORT=8080
-      - ENV=dev
-      - LOG_LEVEL=info
-      # Agent config (passed through when API spawns agent)
-      - WAREHOUSE_PROVIDER=${WAREHOUSE_PROVIDER:-bigquery}
-      - WAREHOUSE_PROJECT_ID=${WAREHOUSE_PROJECT_ID:-}
-      - WAREHOUSE_DATASET=${WAREHOUSE_DATASET:-}
-      - WAREHOUSE_LOCATION=${WAREHOUSE_LOCATION:-US}
-      - LLM_PROVIDER=${LLM_PROVIDER:-claude}
+      # Agent only needs LLM_API_KEY as secret (everything else from project config in MongoDB)
       - LLM_API_KEY=${LLM_API_KEY:-}
-      - LLM_MODEL=${LLM_MODEL:-claude-sonnet-4-20250514}
-      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-}
     depends_on:
       mongodb:
         condition: service_healthy
