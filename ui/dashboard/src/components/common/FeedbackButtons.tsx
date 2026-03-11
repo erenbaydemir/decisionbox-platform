@@ -6,14 +6,15 @@ import { IconThumbUp, IconThumbUpFilled, IconThumbDown, IconThumbDownFilled } fr
 import { api, Feedback } from '@/lib/api';
 
 interface FeedbackButtonsProps {
+  projectId?: string;
   discoveryId: string;
   targetType: 'insight' | 'recommendation';
   targetId: string;
-  feedback?: Feedback | null; // existing feedback for this target
+  feedback?: Feedback | null;
   onUpdate?: (feedback: Feedback | null) => void;
 }
 
-export default function FeedbackButtons({ discoveryId, targetType, targetId, feedback, onUpdate }: FeedbackButtonsProps) {
+export default function FeedbackButtons({ projectId, discoveryId, targetType, targetId, feedback, onUpdate }: FeedbackButtonsProps) {
   const [current, setCurrent] = useState<Feedback | null>(feedback || null);
   const [showComment, setShowComment] = useState(false);
   const [comment, setComment] = useState('');
@@ -43,6 +44,7 @@ export default function FeedbackButtons({ discoveryId, targetType, targetId, fee
     setLoading(true);
     try {
       const result = await api.submitFeedback(discoveryId, {
+        project_id: projectId,
         target_type: targetType,
         target_id: targetId,
         rating,

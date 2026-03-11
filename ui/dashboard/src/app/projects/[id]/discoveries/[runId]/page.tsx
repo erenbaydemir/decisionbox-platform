@@ -226,7 +226,7 @@ export default function DiscoveryDetailPage() {
                       {insight.affected_count > 0 && (
                         <Text size="xs" c="dimmed">{insight.affected_count.toLocaleString()} affected</Text>
                       )}
-                      <FeedbackButtons discoveryId={runId} targetType="insight"
+                      <FeedbackButtons projectId={id} discoveryId={runId} targetType="insight"
                         targetId={String(insight.id || idx)}
                         feedback={feedbackMap[`insight:${insight.id || idx}`]}
                         onUpdate={(fb) => handleFeedbackUpdate('insight', String(insight.id || idx), fb)} />
@@ -401,7 +401,7 @@ function RecommendationCard({ rec, discoveryId, idx, feedback, onFeedbackUpdate 
         <Text size="sm" fw={600}>{rec.title}</Text>
         <Group gap="xs">
           <Badge color={priorityColor} variant="light" size="xs">P{rec.priority}</Badge>
-          <FeedbackButtons discoveryId={discoveryId} targetType="recommendation"
+          <FeedbackButtons projectId={id} discoveryId={discoveryId} targetType="recommendation"
             targetId={String(idx)} feedback={feedback} onUpdate={onFeedbackUpdate} />
         </Group>
       </Group>

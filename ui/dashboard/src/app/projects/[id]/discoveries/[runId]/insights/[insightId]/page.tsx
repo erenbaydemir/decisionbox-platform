@@ -79,7 +79,7 @@ export default function InsightDetailPage() {
             {insight.affected_count > 0 && (
               <Badge variant="outline">{insight.affected_count.toLocaleString()} affected</Badge>
             )}
-            <FeedbackButtons discoveryId={runId} targetType="insight" targetId={insightId}
+            <FeedbackButtons projectId={id} discoveryId={runId} targetType="insight" targetId={insightId}
               feedback={feedback} onUpdate={setFeedback} />
           </Group>
         </div>
