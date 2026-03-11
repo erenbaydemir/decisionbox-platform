@@ -11,6 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	gollm "github.com/decisionbox-io/decisionbox/libs/go-common/llm"
+	gowarehouse "github.com/decisionbox-io/decisionbox/libs/go-common/warehouse"
+
 	_ "github.com/decisionbox-io/decisionbox/domain-packs/gaming/go"
 	_ "github.com/decisionbox-io/decisionbox/providers/llm/claude"
 	_ "github.com/decisionbox-io/decisionbox/providers/llm/openai"
@@ -426,6 +429,40 @@ func TestProcessTracker_ConcurrentSafe(t *testing.T) {
 	}
 	for i := 0; i < 10; i++ {
 		<-done
+	}
+}
+
+func TestLLMProviders_HavePricing(t *testing.T) {
+	// All LLM providers should register default pricing
+	for _, meta := range gollm.RegisteredProvidersMeta() {
+		if len(meta.DefaultPricing) == 0 {
+			t.Errorf("LLM provider %q has no DefaultPricing", meta.ID)
+		}
+	}
+}
+
+func TestWarehouseProviders_HavePricing(t *testing.T) {
+	for _, meta := range gowarehouse.RegisteredProvidersMeta() {
+		if meta.DefaultPricing == nil {
+			t.Errorf("warehouse provider %q has no DefaultPricing", meta.ID)
+		}
+	}
+}
+
+func TestLLMProvider_ClaudePricing(t *testing.T) {
+	meta, ok := gollm.GetProviderMeta("claude")
+	if !ok {
+		t.Fatal("claude provider not registered")
+	}
+	if _, ok := meta.DefaultPricing["claude-sonnet-4"]; !ok {
+		t.Error("claude-sonnet-4 pricing missing")
+	}
+	if _, ok := meta.DefaultPricing["claude-opus-4"]; !ok {
+		t.Error("claude-opus-4 pricing missing")
+	}
+	sonnet := meta.DefaultPricing["claude-sonnet-4"]
+	if sonnet.InputPerMillion <= 0 || sonnet.OutputPerMillion <= 0 {
+		t.Errorf("sonnet pricing invalid: %+v", sonnet)
 	}
 }
 

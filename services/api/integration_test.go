@@ -995,6 +995,66 @@ func TestInteg_ProjectUpdate_PreservesProfile(t *testing.T) {
 	}
 }
 
+// --- Pricing ---
+
+func TestInteg_Pricing_SeededFromProviders(t *testing.T) {
+	// Pricing should be auto-seeded on startup from registered providers
+	resp := doRequest(t, "GET", "/api/v1/pricing", nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("pricing status = %d", resp.StatusCode)
+	}
+	r := decodeResponse(t, resp)
+	data := r.Data.(map[string]interface{})
+
+	// Should have LLM providers
+	llm := data["llm"].(map[string]interface{})
+	if len(llm) == 0 {
+		t.Error("no LLM pricing seeded")
+	}
+
+	// Should have claude pricing
+	if _, ok := llm["claude"]; !ok {
+		t.Error("claude pricing not seeded")
+	}
+
+	// Should have warehouse pricing
+	warehouse := data["warehouse"].(map[string]interface{})
+	if len(warehouse) == 0 {
+		t.Error("no warehouse pricing seeded")
+	}
+}
+
+func TestInteg_Pricing_Update(t *testing.T) {
+	resp := doRequest(t, "PUT", "/api/v1/pricing", map[string]interface{}{
+		"llm": map[string]interface{}{
+			"claude": map[string]interface{}{
+				"custom-model": map[string]interface{}{
+					"input_per_million": 99.0, "output_per_million": 199.0,
+				},
+			},
+		},
+		"warehouse": map[string]interface{}{
+			"bigquery": map[string]interface{}{
+				"cost_model": "per_byte_scanned", "cost_per_tb_scanned_usd": 5.0,
+			},
+		},
+	})
+	if resp.StatusCode != 200 {
+		t.Fatalf("update pricing status = %d", resp.StatusCode)
+	}
+
+	// Verify it was saved
+	resp = doRequest(t, "GET", "/api/v1/pricing", nil)
+	r := decodeResponse(t, resp)
+	data := r.Data.(map[string]interface{})
+	llm := data["llm"].(map[string]interface{})
+	claude := llm["claude"].(map[string]interface{})
+	custom := claude["custom-model"].(map[string]interface{})
+	if custom["input_per_million"].(float64) != 99.0 {
+		t.Errorf("custom model pricing not saved: %v", custom)
+	}
+}
+
 // --- CORS ---
 
 func TestInteg_CORS(t *testing.T) {
