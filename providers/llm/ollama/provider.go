@@ -44,6 +44,9 @@ func init() {
 			{Key: "host", Label: "Ollama Host", Type: "string", Default: "http://localhost:11434", Placeholder: "http://localhost:11434"},
 			{Key: "model", Label: "Model", Required: true, Type: "string", Default: "qwen2.5:7b", Placeholder: "qwen2.5:7b"},
 		},
+		DefaultPricing: map[string]gollm.TokenPricing{
+			"_default": {InputPerMillion: 0, OutputPerMillion: 0},
+		},
 	})
 }
 

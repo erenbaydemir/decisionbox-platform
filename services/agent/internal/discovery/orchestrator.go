@@ -43,8 +43,10 @@ type Orchestrator struct {
 	profile        map[string]interface{}
 	projectPrompts *models.ProjectPrompts
 	datasets       []string
-	filterField string
-	filterValue string
+	filterField    string
+	filterValue    string
+	llmProvider    string
+	llmModel       string
 }
 
 // OrchestratorOptions configures the orchestrator.
@@ -69,6 +71,8 @@ type OrchestratorOptions struct {
 	Datasets        []string
 	FilterField     string
 	FilterValue     string
+	LLMProvider     string
+	LLMModel        string
 	EnableDebugLogs bool
 }
 
@@ -127,6 +131,8 @@ func NewOrchestrator(opts OrchestratorOptions) *Orchestrator {
 		datasets:           opts.Datasets,
 		filterField:        opts.FilterField,
 		filterValue:        opts.FilterValue,
+		llmProvider:        opts.LLMProvider,
+		llmModel:           opts.LLMModel,
 	}
 }
 

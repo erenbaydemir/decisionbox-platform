@@ -47,6 +47,13 @@ func init() {
 			{Key: "api_key", Label: "API Key", Required: true, Type: "string", Placeholder: "sk-ant-..."},
 			{Key: "model", Label: "Model", Required: true, Type: "string", Default: "claude-sonnet-4-20250514"},
 		},
+		DefaultPricing: map[string]gollm.TokenPricing{
+			"claude-sonnet-4":   {InputPerMillion: 3.0, OutputPerMillion: 15.0},
+			"claude-sonnet-4-5": {InputPerMillion: 3.0, OutputPerMillion: 15.0},
+			"claude-opus-4":     {InputPerMillion: 15.0, OutputPerMillion: 75.0},
+			"claude-opus-4-6":   {InputPerMillion: 15.0, OutputPerMillion: 75.0},
+			"claude-haiku-4-5":  {InputPerMillion: 0.80, OutputPerMillion: 4.0},
+		},
 	})
 }
 

@@ -13,13 +13,20 @@ type ProviderConfig map[string]string
 // Provider packages implement this and register it via Register().
 type ProviderFactory func(cfg ProviderConfig) (Provider, error)
 
+// WarehousePricing holds pricing info for a warehouse provider.
+type WarehousePricing struct {
+	CostModel           string  `json:"cost_model"`              // "per_byte_scanned", "per_query", "per_hour"
+	CostPerTBScannedUSD float64 `json:"cost_per_tb_scanned_usd"` // for per_byte_scanned model
+}
+
 // ProviderMeta describes a provider for UI rendering and documentation.
 // Providers register this alongside their factory via RegisterWithMeta().
 type ProviderMeta struct {
-	ID          string        `json:"id"`
-	Name        string        `json:"name"`        // display name: "Google BigQuery"
-	Description string        `json:"description"`  // short description
-	ConfigFields []ConfigField `json:"config_fields"` // fields the UI should render
+	ID             string            `json:"id"`
+	Name           string            `json:"name"`
+	Description    string            `json:"description"`
+	ConfigFields   []ConfigField     `json:"config_fields"`
+	DefaultPricing *WarehousePricing  `json:"default_pricing,omitempty"`
 }
 
 // ConfigField describes a single configuration field for a provider.

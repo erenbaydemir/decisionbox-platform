@@ -42,6 +42,10 @@ func init() {
 			{Key: "region", Label: "AWS Region", Type: "string", Default: "us-east-1"},
 			{Key: "model", Label: "Model", Required: true, Type: "string", Default: "anthropic.claude-sonnet-4-20250514-v1:0"},
 		},
+		DefaultPricing: map[string]gollm.TokenPricing{
+			"claude-sonnet-4": {InputPerMillion: 3.0, OutputPerMillion: 15.0},
+			"claude-opus-4":   {InputPerMillion: 15.0, OutputPerMillion: 75.0},
+		},
 	})
 }
 

@@ -13,12 +13,19 @@ type ProviderConfig map[string]string
 // Provider packages implement this and register it via Register().
 type ProviderFactory func(cfg ProviderConfig) (Provider, error)
 
+// TokenPricing holds per-token pricing for an LLM model.
+type TokenPricing struct {
+	InputPerMillion  float64 `json:"input_per_million"`
+	OutputPerMillion float64 `json:"output_per_million"`
+}
+
 // ProviderMeta describes a provider for UI rendering.
 type ProviderMeta struct {
-	ID          string        `json:"id"`
-	Name        string        `json:"name"`
-	Description string        `json:"description"`
-	ConfigFields []ConfigField `json:"config_fields"`
+	ID             string                    `json:"id"`
+	Name           string                    `json:"name"`
+	Description    string                    `json:"description"`
+	ConfigFields   []ConfigField             `json:"config_fields"`
+	DefaultPricing map[string]TokenPricing   `json:"default_pricing,omitempty"` // model -> pricing
 }
 
 // ConfigField describes a single configuration field.
@@ -116,4 +123,12 @@ func RegisteredProvidersMeta() []ProviderMeta {
 		metas = append(metas, m)
 	}
 	return metas
+}
+
+// GetProviderMeta returns metadata for a specific provider.
+func GetProviderMeta(name string) (ProviderMeta, bool) {
+	providersMu.RLock()
+	defer providersMu.RUnlock()
+	m, ok := providerMeta[name]
+	return m, ok
 }

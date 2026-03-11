@@ -58,6 +58,18 @@ type Provider interface {
 	Close() error
 }
 
+// CostEstimator is an optional interface for providers that support dry-run cost estimation.
+// Use type assertion to check: if ce, ok := provider.(CostEstimator); ok { ... }
+type CostEstimator interface {
+	// DryRun estimates bytes that would be scanned by a query without executing it.
+	DryRun(ctx context.Context, query string) (*DryRunResult, error)
+}
+
+// DryRunResult holds the result of a dry-run query estimation.
+type DryRunResult struct {
+	BytesProcessed int64
+}
+
 // QueryResult holds the result of a warehouse query.
 type QueryResult struct {
 	Columns []string

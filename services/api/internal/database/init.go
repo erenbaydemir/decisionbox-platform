@@ -56,6 +56,10 @@ var schema = []struct {
 		},
 	},
 	{
+		Name:    "pricing",
+		Indexes: []mongo.IndexModel{},
+	},
+	{
 		Name: "feedback",
 		Indexes: []mongo.IndexModel{
 			{Keys: bson.D{{Key: "discovery_id", Value: 1}}},

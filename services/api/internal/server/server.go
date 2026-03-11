@@ -19,6 +19,7 @@ func New(db *database.DB) http.Handler {
 	discoveryRepo := database.NewDiscoveryRepository(db)
 	runRepo := database.NewRunRepository(db)
 	feedbackRepo := database.NewFeedbackRepository(db)
+	pricingRepo := database.NewPricingRepository(db)
 
 	// Clean up stale runs from previous container lifecycle
 	cleaned, err := runRepo.CleanupStaleRuns(context.Background())
@@ -31,12 +32,17 @@ func New(db *database.DB) http.Handler {
 	// Process tracker for agent subprocesses
 	tracker := handler.NewProcessTracker()
 
+	// Seed pricing from registered providers (if not yet in MongoDB)
+	handler.SeedPricingFromProviders(context.Background(), pricingRepo)
+
 	// Handlers
 	providers := handler.NewProvidersHandler()
 	domains := handler.NewDomainsHandler()
 	projects := handler.NewProjectsHandler(projectRepo)
 	discoveries := handler.NewDiscoveriesHandler(discoveryRepo, projectRepo, runRepo, tracker)
 	feedback := handler.NewFeedbackHandler(feedbackRepo)
+	pricing := handler.NewPricingHandler(pricingRepo)
+	estimate := handler.NewEstimateHandler(projectRepo)
 
 	// Health
 	mux.HandleFunc("GET /api/v1/health", handler.HealthCheck)
@@ -80,6 +86,13 @@ func New(db *database.DB) http.Handler {
 	mux.HandleFunc("POST /api/v1/discoveries/{runId}/feedback", feedback.Submit)
 	mux.HandleFunc("GET /api/v1/discoveries/{runId}/feedback", feedback.List)
 	mux.HandleFunc("DELETE /api/v1/feedback/{id}", feedback.Delete)
+
+	// Pricing
+	mux.HandleFunc("GET /api/v1/pricing", pricing.Get)
+	mux.HandleFunc("PUT /api/v1/pricing", pricing.Update)
+
+	// Cost estimation
+	mux.HandleFunc("POST /api/v1/projects/{id}/discover/estimate", estimate.Estimate)
 
 	// CORS middleware for dashboard
 	return corsMiddleware(mux)

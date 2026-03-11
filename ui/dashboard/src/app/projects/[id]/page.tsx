@@ -15,7 +15,7 @@ import {
 } from '@tabler/icons-react';
 import Link from 'next/link';
 import Shell from '@/components/layout/AppShell';
-import { api, DiscoveryResult, DiscoveryRunStatus, Project, RunStep } from '@/lib/api';
+import { api, CostEstimate, DiscoveryResult, DiscoveryRunStatus, Project, RunStep } from '@/lib/api';
 
 export default function ProjectPage() {
   const { id } = useParams<{ id: string }>();
@@ -27,6 +27,9 @@ export default function ProjectPage() {
   const [analysisAreas, setAnalysisAreas] = useState<{ id: string; name: string }[]>([]);
   const [selectedAreas, setSelectedAreas] = useState<string[]>([]);
   const [maxSteps, setMaxSteps] = useState(100);
+  const [estimate, setEstimate] = useState<CostEstimate | null>(null);
+  const [estimating, setEstimating] = useState(false);
+  const [pendingAreas, setPendingAreas] = useState<string[] | undefined>(undefined);
   const dismissedRunId = useRef<string | null>(null);
 
   useEffect(() => {
@@ -70,8 +73,27 @@ export default function ProjectPage() {
   // Initial poll on mount
   useEffect(() => { pollStatus(); }, []);
 
+  const handleEstimate = async (areas?: string[]) => {
+    setEstimating(true);
+    setPendingAreas(areas);
+    try {
+      const opts: { areas?: string[]; max_steps?: number } = {};
+      if (areas && areas.length > 0) opts.areas = areas;
+      opts.max_steps = maxSteps;
+      const est = await api.estimateCost(id, opts);
+      setEstimate(est);
+    } catch (e: unknown) {
+      notifications.show({ title: 'Estimation failed', message: (e as Error).message, color: 'orange' });
+      // Fall through — let them run without estimate
+      handleTrigger(areas);
+    } finally {
+      setEstimating(false);
+    }
+  };
+
   const handleTrigger = async (areas?: string[]) => {
     setTriggering(true);
+    setEstimate(null);
     try {
       const opts: { areas?: string[]; max_steps?: number } = {};
       if (areas && areas.length > 0) opts.areas = areas;
@@ -122,8 +144,8 @@ export default function ProjectPage() {
               <Menu.Target>
                 <Button leftSection={<IconPlayerPlay size={16} />}
                   rightSection={<IconChevronDown size={14} />}
-                  loading={triggering} disabled={!!isRunning}>
-                  {isRunning ? 'Running...' : 'Run Discovery'}
+                  loading={triggering || estimating} disabled={!!isRunning}>
+                  {isRunning ? 'Running...' : estimating ? 'Estimating...' : 'Run Discovery'}
                 </Button>
               </Menu.Target>
               <Menu.Dropdown>
@@ -133,7 +155,7 @@ export default function ProjectPage() {
                     min={5} max={500} step={5} description="More steps = more comprehensive" />
                 </div>
                 <Menu.Divider />
-                <Menu.Item onClick={() => handleTrigger()}>Run All Areas</Menu.Item>
+                <Menu.Item onClick={() => handleEstimate()}>Run All Areas</Menu.Item>
                 <Menu.Divider />
                 <Menu.Label>Select areas</Menu.Label>
                 {analysisAreas.map((area) => (
@@ -148,7 +170,7 @@ export default function ProjectPage() {
                 {selectedAreas.length > 0 && (
                   <>
                     <Menu.Divider />
-                    <Menu.Item color="blue" onClick={() => handleTrigger(selectedAreas)}>
+                    <Menu.Item color="blue" onClick={() => handleEstimate(selectedAreas)}>
                       Run Selected ({selectedAreas.length})
                     </Menu.Item>
                   </>
@@ -157,6 +179,50 @@ export default function ProjectPage() {
             </Menu>
           </Group>
         </Group>
+
+        {/* Cost Estimation Confirmation */}
+        {(estimating || estimate) && (
+          <Card withBorder p="lg" shadow="sm" radius="md">
+            {estimating ? (
+              <Group gap="sm">
+                <Loader size="sm" />
+                <Text size="sm">Estimating cost...</Text>
+              </Group>
+            ) : estimate && (
+              <Stack gap="sm">
+                <Title order={4}>Cost Estimate</Title>
+                <Grid>
+                  <Grid.Col span={4}>
+                    <Text size="xs" c="dimmed">LLM ({estimate.llm.provider}/{estimate.llm.model})</Text>
+                    <Text size="lg" fw={700}>${estimate.llm.cost_usd.toFixed(4)}</Text>
+                    <Text size="xs" c="dimmed">
+                      ~{(estimate.llm.estimated_input_tokens / 1000).toFixed(0)}K in + {(estimate.llm.estimated_output_tokens / 1000).toFixed(0)}K out tokens
+                    </Text>
+                  </Grid.Col>
+                  <Grid.Col span={4}>
+                    <Text size="xs" c="dimmed">Warehouse ({estimate.warehouse.provider})</Text>
+                    <Text size="lg" fw={700}>${estimate.warehouse.cost_usd.toFixed(4)}</Text>
+                    <Text size="xs" c="dimmed">
+                      ~{estimate.warehouse.estimated_queries} queries, {(estimate.warehouse.estimated_bytes_scanned / (1024 * 1024)).toFixed(0)} MB
+                    </Text>
+                  </Grid.Col>
+                  <Grid.Col span={4}>
+                    <Text size="xs" c="dimmed">Total Estimated Cost</Text>
+                    <Text size="xl" fw={700} c="blue">${estimate.total_cost_usd.toFixed(4)}</Text>
+                  </Grid.Col>
+                </Grid>
+                <Group justify="flex-end" gap="sm">
+                  <Button variant="subtle" color="gray" onClick={() => { setEstimate(null); setPendingAreas(undefined); }}>
+                    Cancel
+                  </Button>
+                  <Button onClick={() => handleTrigger(pendingAreas)} loading={triggering}>
+                    Confirm & Run
+                  </Button>
+                </Group>
+              </Stack>
+            )}
+          </Card>
+        )}
 
         {/* Live Run Status */}
         {showRunCard && run && (

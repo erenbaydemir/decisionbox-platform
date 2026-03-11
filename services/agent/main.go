@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -43,6 +44,7 @@ func main() {
 		includeLog      = flag.Bool("include-log", false, "Include full exploration log")
 		testMode        = flag.Bool("test", false, "Test mode - limit analyses for faster testing")
 		enableDebugLogs = flag.Bool("enable-debug-logs", true, "Enable detailed debug logging to MongoDB")
+		estimateOnly    = flag.Bool("estimate", false, "Estimate cost only (no actual discovery)")
 	)
 
 	flag.Parse()
@@ -84,14 +86,14 @@ func main() {
 		}
 	}
 
-	if err := runDiscovery(cfg, *projectID, *runID, selectedAreas, *maxSteps, *skipCache, *includeLog, *testMode, *enableDebugLogs); err != nil {
+	if err := runDiscovery(cfg, *projectID, *runID, selectedAreas, *maxSteps, *skipCache, *includeLog, *testMode, *enableDebugLogs, *estimateOnly); err != nil {
 		applog.WithError(err).Fatal("Discovery failed")
 	}
 
 	applog.Info("Discovery completed successfully")
 }
 
-func runDiscovery(cfg *config.Config, projectID string, runID string, selectedAreas []string, maxSteps int, skipCache, includeLog, testMode, enableDebugLogs bool) error {
+func runDiscovery(cfg *config.Config, projectID string, runID string, selectedAreas []string, maxSteps int, skipCache, includeLog, testMode, enableDebugLogs, estimateOnly bool) error {
 	ctx := context.Background()
 
 	// Initialize MongoDB
@@ -214,8 +216,30 @@ func runDiscovery(cfg *config.Config, projectID string, runID string, selectedAr
 		Datasets:        datasets,
 		FilterField:     project.Warehouse.FilterField,
 		FilterValue:     project.Warehouse.FilterValue,
+		LLMProvider:     project.LLM.Provider,
+		LLMModel:        project.LLM.Model,
 		EnableDebugLogs: enableDebugLogs,
 	})
+
+	// Estimate mode: calculate costs without running discovery
+	if estimateOnly {
+		applog.Info("Running cost estimation only")
+		estimateCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		defer cancel()
+
+		estimate, err := orchestrator.EstimateCost(estimateCtx, discovery.EstimateOptions{
+			MaxSteps:      maxSteps,
+			SelectedAreas: selectedAreas,
+		})
+		if err != nil {
+			return fmt.Errorf("cost estimation failed: %w", err)
+		}
+
+		// Output estimate as JSON to stdout (API captures this)
+		estimateJSON, _ := json.MarshalIndent(estimate, "", "  ")
+		fmt.Println(string(estimateJSON))
+		return nil
+	}
 
 	// Run discovery
 	discoveryCtx, cancel := context.WithTimeout(ctx, 2*time.Hour)

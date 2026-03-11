@@ -52,6 +52,14 @@ func init() {
 			{Key: "model", Label: "Model", Required: true, Type: "string", Default: "gpt-4o"},
 			{Key: "base_url", Label: "Base URL", Type: "string", Default: "https://api.openai.com/v1", Description: "For OpenAI-compatible APIs"},
 		},
+		DefaultPricing: map[string]gollm.TokenPricing{
+			"gpt-4o":      {InputPerMillion: 2.50, OutputPerMillion: 10.0},
+			"gpt-4o-mini": {InputPerMillion: 0.15, OutputPerMillion: 0.60},
+			"gpt-4.1":     {InputPerMillion: 2.0, OutputPerMillion: 8.0},
+			"gpt-4.1-mini": {InputPerMillion: 0.40, OutputPerMillion: 1.60},
+			"o3":          {InputPerMillion: 2.0, OutputPerMillion: 8.0},
+			"o4-mini":     {InputPerMillion: 1.10, OutputPerMillion: 4.40},
+		},
 	})
 }
 

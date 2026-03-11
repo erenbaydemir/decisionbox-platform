@@ -123,6 +123,7 @@ func (c *Client) ExtractText(resp *gollm.ChatResponse) string {
 	return resp.Content
 }
 
+func (c *Client) ModelName() string             { return c.model }
 func (c *Client) SetTestMode(enabled bool)     { c.testMode = enabled }
 func (c *Client) SetDebugLogger(dl *debug.Logger) { c.debugLogger = dl }
 func (c *Client) SetStep(step int)             { c.currentStep = step }
