@@ -3,14 +3,14 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import {
-  Badge, Button, Card, Chip, Grid, Group, Loader, Stack, Text, Title,
+  Accordion, Badge, Button, Card, Chip, Code, Grid, Group, Loader, Stack, Text, Title,
 } from '@mantine/core';
 import {
-  IconAlertTriangle, IconArrowLeft, IconBulb, IconTrendingUp,
+  IconAlertTriangle, IconArrowLeft, IconBulb, IconDatabase, IconSearch, IconTrendingUp,
 } from '@tabler/icons-react';
 import Link from 'next/link';
 import Shell from '@/components/layout/AppShell';
-import { api, DiscoveryResult, Insight, Recommendation } from '@/lib/api';
+import { api, DiscoveryResult, Insight, Recommendation, ExplorationStep, AnalysisLogStep } from '@/lib/api';
 
 const severityColor: Record<string, string> = {
   critical: 'red', high: 'orange', medium: 'yellow', low: 'gray',
@@ -212,6 +212,127 @@ export default function DiscoveryDetailPage() {
                   <RecommendationCard key={idx} rec={rec} />
                 ))}
             </Stack>
+          </>
+        )}
+        {/* Transparency: How the AI Found This */}
+        {((discovery.exploration_log && discovery.exploration_log.length > 0) ||
+          (discovery.analysis_log && discovery.analysis_log.length > 0)) && (
+          <>
+            <Title order={3}>
+              <IconSearch size={20} style={{ verticalAlign: 'middle', marginRight: 8 }} />
+              How the AI Found This
+            </Title>
+
+            <Accordion variant="separated">
+              {/* Exploration Trail */}
+              {discovery.exploration_log && discovery.exploration_log.length > 0 && (
+                <Accordion.Item value="exploration">
+                  <Accordion.Control>
+                    <Group gap="xs">
+                      <IconDatabase size={16} />
+                      <Text size="sm" fw={600}>Exploration Steps ({discovery.exploration_log.length})</Text>
+                      <Text size="xs" c="dimmed">SQL queries the agent ran to discover data</Text>
+                    </Group>
+                  </Accordion.Control>
+                  <Accordion.Panel>
+                    <Stack gap="sm">
+                      {discovery.exploration_log.map((step, idx) => (
+                        <Card key={idx} withBorder p="sm" radius="sm">
+                          <Group justify="space-between" mb={4}>
+                            <Text size="xs" fw={600}>Step {step.step}</Text>
+                            <Group gap="xs">
+                              {step.row_count > 0 && (
+                                <Badge size="xs" variant="outline">{step.row_count} rows</Badge>
+                              )}
+                              {step.execution_time_ms > 0 && (
+                                <Badge size="xs" variant="outline">{step.execution_time_ms}ms</Badge>
+                              )}
+                              {step.fixed && <Badge size="xs" color="yellow">auto-fixed</Badge>}
+                              {step.error && <Badge size="xs" color="red">error</Badge>}
+                            </Group>
+                          </Group>
+                          {step.thinking && (
+                            <Text size="xs" c="dimmed" mb={4}>{step.thinking}</Text>
+                          )}
+                          {step.query && (
+                            <Code block style={{ fontSize: '10px', maxHeight: 80, overflow: 'auto' }}>
+                              {step.query}
+                            </Code>
+                          )}
+                          {step.error && <Text size="xs" c="red" mt={4}>{step.error}</Text>}
+                        </Card>
+                      ))}
+                    </Stack>
+                  </Accordion.Panel>
+                </Accordion.Item>
+              )}
+
+              {/* Analysis Reasoning */}
+              {discovery.analysis_log && discovery.analysis_log.length > 0 && (
+                <Accordion.Item value="analysis">
+                  <Accordion.Control>
+                    <Group gap="xs">
+                      <IconBulb size={16} />
+                      <Text size="sm" fw={600}>Analysis by Area ({discovery.analysis_log.length})</Text>
+                      <Text size="xs" c="dimmed">How insights were extracted from exploration data</Text>
+                    </Group>
+                  </Accordion.Control>
+                  <Accordion.Panel>
+                    <Stack gap="sm">
+                      {discovery.analysis_log.map((step, idx) => (
+                        <Card key={idx} withBorder p="sm" radius="sm">
+                          <Group justify="space-between" mb={4}>
+                            <Text size="sm" fw={600}>{step.area_name || step.area_id}</Text>
+                            <Group gap="xs">
+                              <Badge size="xs" variant="outline">{step.relevant_queries} queries fed</Badge>
+                              <Badge size="xs" variant="outline">{step.tokens_in + step.tokens_out} tokens</Badge>
+                              {step.duration_ms > 0 && (
+                                <Badge size="xs" variant="outline">{(step.duration_ms / 1000).toFixed(1)}s</Badge>
+                              )}
+                              {step.error && <Badge size="xs" color="red">error</Badge>}
+                            </Group>
+                          </Group>
+                          {step.error && <Text size="xs" c="red">{step.error}</Text>}
+                        </Card>
+                      ))}
+                    </Stack>
+                  </Accordion.Panel>
+                </Accordion.Item>
+              )}
+
+              {/* Validation Trail */}
+              {discovery.validation_log && discovery.validation_log.length > 0 && (
+                <Accordion.Item value="validation">
+                  <Accordion.Control>
+                    <Group gap="xs">
+                      <Text size="sm" fw={600}>Validation ({discovery.validation_log.length})</Text>
+                      <Text size="xs" c="dimmed">How insights were verified against the warehouse</Text>
+                    </Group>
+                  </Accordion.Control>
+                  <Accordion.Panel>
+                    <Stack gap="sm">
+                      {discovery.validation_log.map((v, idx) => (
+                        <Card key={idx} withBorder p="sm" radius="sm">
+                          <Group justify="space-between" mb={4}>
+                            <Text size="xs">{v.analysis_area}</Text>
+                            <Badge size="xs" variant="light"
+                              color={v.status === 'confirmed' ? 'green' : v.status === 'adjusted' ? 'yellow' : v.status === 'error' ? 'red' : 'gray'}>
+                              {v.status}
+                            </Badge>
+                          </Group>
+                          {v.claimed_count > 0 && (
+                            <Text size="xs" c="dimmed">
+                              Claimed: {v.claimed_count.toLocaleString()} → Verified: {v.verified_count.toLocaleString()}
+                            </Text>
+                          )}
+                          <Text size="xs" c="dimmed">{v.reasoning}</Text>
+                        </Card>
+                      ))}
+                    </Stack>
+                  </Accordion.Panel>
+                </Accordion.Item>
+              )}
+            </Accordion>
           </>
         )}
       </Stack>

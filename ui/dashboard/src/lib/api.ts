@@ -96,7 +96,7 @@ export interface DiscoveryResult {
   project_id: string;
   domain: string;
   category: string;
-  run_type: string; // "full" or "partial"
+  run_type: string;
   areas_requested: string[];
   discovery_date: string;
   total_steps: number;
@@ -104,6 +104,9 @@ export interface DiscoveryResult {
   insights: Insight[];
   recommendations: Recommendation[];
   summary: Summary;
+  exploration_log?: ExplorationStep[];
+  analysis_log?: AnalysisLogStep[];
+  validation_log?: ValidationLogEntry[];
   created_at: string;
 }
 
@@ -150,6 +153,42 @@ export interface Summary {
   total_insights: number;
   total_recommendations: number;
   queries_executed: number;
+}
+
+export interface ExplorationStep {
+  step: number;
+  timestamp: string;
+  action: string;
+  thinking: string;
+  query_purpose: string;
+  query: string;
+  row_count: number;
+  execution_time_ms: number;
+  error: string;
+  fixed: boolean;
+}
+
+export interface AnalysisLogStep {
+  area_id: string;
+  area_name: string;
+  run_at: string;
+  relevant_queries: number;
+  tokens_in: number;
+  tokens_out: number;
+  duration_ms: number;
+  insight_count: number;
+  error: string;
+}
+
+export interface ValidationLogEntry {
+  insight_id: string;
+  analysis_area: string;
+  claimed_count: number;
+  verified_count: number;
+  status: string;
+  reasoning: string;
+  query: string;
+  validated_at: string;
 }
 
 export interface ProjectStatus {

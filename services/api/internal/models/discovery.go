@@ -20,6 +20,11 @@ type DiscoveryResult struct {
 	Recommendations []Recommendation `bson:"recommendations" json:"recommendations"`
 	Summary         Summary          `bson:"summary" json:"summary"`
 
+	// Logs — available on single discovery endpoint, excluded from list
+	ExplorationLog []ExplorationStep      `bson:"exploration_log,omitempty" json:"exploration_log,omitempty"`
+	AnalysisLog    []AnalysisStep         `bson:"analysis_log,omitempty" json:"analysis_log,omitempty"`
+	ValidationLog  []ValidationLogEntry   `bson:"validation_log,omitempty" json:"validation_log,omitempty"`
+
 	CreatedAt time.Time `bson:"created_at" json:"created_at"`
 }
 
@@ -64,6 +69,42 @@ type Impact struct {
 	Metric               string  `bson:"metric" json:"metric"`
 	EstimatedImprovement string  `bson:"estimated_improvement" json:"estimated_improvement"`
 	Reasoning            string  `bson:"reasoning" json:"reasoning"`
+}
+
+type ExplorationStep struct {
+	Step         int       `bson:"step" json:"step"`
+	Timestamp    time.Time `bson:"timestamp" json:"timestamp"`
+	Action       string    `bson:"action" json:"action"`
+	Thinking     string    `bson:"thinking" json:"thinking"`
+	QueryPurpose string    `bson:"query_purpose,omitempty" json:"query_purpose,omitempty"`
+	Query        string    `bson:"query,omitempty" json:"query,omitempty"`
+	RowCount     int       `bson:"row_count,omitempty" json:"row_count,omitempty"`
+	ExecutionMs  int64     `bson:"execution_time_ms,omitempty" json:"execution_time_ms,omitempty"`
+	Error        string    `bson:"error,omitempty" json:"error,omitempty"`
+	Fixed        bool      `bson:"fixed,omitempty" json:"fixed,omitempty"`
+}
+
+type AnalysisStep struct {
+	AreaID          string    `bson:"area_id" json:"area_id"`
+	AreaName        string    `bson:"area_name" json:"area_name"`
+	RunAt           time.Time `bson:"run_at" json:"run_at"`
+	RelevantQueries int       `bson:"relevant_queries" json:"relevant_queries"`
+	TokensIn        int       `bson:"tokens_in" json:"tokens_in"`
+	TokensOut       int       `bson:"tokens_out" json:"tokens_out"`
+	DurationMs      int64     `bson:"duration_ms" json:"duration_ms"`
+	InsightCount    int       `bson:"insight_count,omitempty" json:"insight_count,omitempty"`
+	Error           string    `bson:"error,omitempty" json:"error,omitempty"`
+}
+
+type ValidationLogEntry struct {
+	InsightID     string    `bson:"insight_id" json:"insight_id"`
+	AnalysisArea  string    `bson:"analysis_area" json:"analysis_area"`
+	ClaimedCount  int       `bson:"claimed_count" json:"claimed_count"`
+	VerifiedCount int       `bson:"verified_count" json:"verified_count"`
+	Status        string    `bson:"status" json:"status"`
+	Reasoning     string    `bson:"reasoning" json:"reasoning"`
+	Query         string    `bson:"query,omitempty" json:"query,omitempty"`
+	ValidatedAt   time.Time `bson:"validated_at" json:"validated_at"`
 }
 
 type Summary struct {
