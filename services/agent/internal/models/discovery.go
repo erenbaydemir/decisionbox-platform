@@ -11,6 +11,9 @@ type DiscoveryResult struct {
 	Category      string    `bson:"category" json:"category"`
 	DiscoveryDate time.Time `bson:"discovery_date" json:"discovery_date"`
 
+	RunType        string   `bson:"run_type" json:"run_type"`                 // "full" or "partial"
+	AreasRequested []string `bson:"areas_requested,omitempty" json:"areas_requested,omitempty"` // for partial runs
+
 	TotalSteps int           `bson:"total_steps" json:"total_steps"`
 	Duration   time.Duration `bson:"duration" json:"duration"`
 

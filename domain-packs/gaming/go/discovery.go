@@ -1,24 +1,28 @@
 package gaming
 
 import (
-	"embed"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/decisionbox-io/decisionbox/libs/go-common/domainpack"
 )
 
-//go:embed prompts/base/*.md
-var basePrompts embed.FS
+// Default paths relative to the working directory.
+// Can be overridden via DOMAIN_PACK_PATH env var.
+var (
+	promptsPath  = "domain-packs/gaming/prompts"
+	profilesPath = "domain-packs/gaming/profiles"
+)
 
-//go:embed prompts/categories
-var categoryPrompts embed.FS
-
-//go:embed profiles/schema.json
-var baseProfileSchema []byte
-
-//go:embed profiles/categories
-var categoryProfiles embed.FS
+func init() {
+	if p := os.Getenv("DOMAIN_PACK_PATH"); p != "" {
+		promptsPath = filepath.Join(p, "prompts")
+		profilesPath = filepath.Join(p, "profiles")
+	}
+}
 
 // Compile-time check: GamingPack implements DiscoveryPack.
 var _ domainpack.DiscoveryPack = (*GamingPack)(nil)
@@ -97,29 +101,30 @@ func (p *GamingPack) AnalysisAreas(categoryID string) []domainpack.AnalysisArea 
 }
 
 // Prompts returns merged prompt templates for a given category.
+// Reads from filesystem (not embedded) so prompts are language-agnostic.
 func (p *GamingPack) Prompts(categoryID string) domainpack.PromptTemplates {
 	templates := domainpack.PromptTemplates{
 		AnalysisAreas: make(map[string]string),
 	}
 
 	// Load base exploration prompt
-	templates.Exploration = mustReadEmbed(basePrompts, "prompts/base/exploration.md")
+	templates.Exploration = readPromptFile(filepath.Join(promptsPath, "base", "exploration.md"))
 
 	// Merge category-specific exploration context
 	if categoryID != "" {
-		contextPath := fmt.Sprintf("prompts/categories/%s/exploration_context.md", categoryID)
-		if context, err := readEmbed(categoryPrompts, contextPath); err == nil {
+		contextPath := filepath.Join(promptsPath, "categories", categoryID, "exploration_context.md")
+		if context := readPromptFile(contextPath); context != "" {
 			templates.Exploration = templates.Exploration + "\n\n" + context
 		}
 	}
 
 	// Load base recommendations prompt
-	templates.Recommendations = mustReadEmbed(basePrompts, "prompts/base/recommendations.md")
+	templates.Recommendations = readPromptFile(filepath.Join(promptsPath, "base", "recommendations.md"))
 
 	// Load base analysis prompts
 	for _, area := range baseAnalysisAreas {
-		path := fmt.Sprintf("prompts/base/analysis_%s.md", area.ID)
-		if content, err := readEmbed(basePrompts, path); err == nil {
+		path := filepath.Join(promptsPath, "base", fmt.Sprintf("analysis_%s.md", area.ID))
+		if content := readPromptFile(path); content != "" {
 			templates.AnalysisAreas[area.ID] = content
 		}
 	}
@@ -128,8 +133,8 @@ func (p *GamingPack) Prompts(categoryID string) domainpack.PromptTemplates {
 	if categoryID != "" {
 		if specific, ok := categoryAnalysisAreas[categoryID]; ok {
 			for _, area := range specific {
-				path := fmt.Sprintf("prompts/categories/%s/analysis_%s.md", categoryID, area.ID)
-				if content, err := readEmbed(categoryPrompts, path); err == nil {
+				path := filepath.Join(promptsPath, "categories", categoryID, fmt.Sprintf("analysis_%s.md", area.ID))
+				if content := readPromptFile(path); content != "" {
 					templates.AnalysisAreas[area.ID] = content
 				}
 			}
@@ -141,8 +146,14 @@ func (p *GamingPack) Prompts(categoryID string) domainpack.PromptTemplates {
 
 // ProfileSchema returns the merged JSON Schema for a given category.
 func (p *GamingPack) ProfileSchema(categoryID string) map[string]interface{} {
+	// Parse base schema
+	baseData, err := os.ReadFile(filepath.Join(profilesPath, "schema.json"))
+	if err != nil {
+		return map[string]interface{}{"error": "base schema not found: " + err.Error()}
+	}
+
 	var base map[string]interface{}
-	if err := json.Unmarshal(baseProfileSchema, &base); err != nil {
+	if err := json.Unmarshal(baseData, &base); err != nil {
 		return map[string]interface{}{"error": err.Error()}
 	}
 
@@ -151,8 +162,8 @@ func (p *GamingPack) ProfileSchema(categoryID string) map[string]interface{} {
 	}
 
 	// Load category-specific schema and merge properties
-	catPath := fmt.Sprintf("profiles/categories/%s.json", categoryID)
-	catData, err := categoryProfiles.ReadFile(catPath)
+	catPath := filepath.Join(profilesPath, "categories", categoryID+".json")
+	catData, err := os.ReadFile(catPath)
 	if err != nil {
 		return base
 	}
@@ -173,18 +184,10 @@ func (p *GamingPack) ProfileSchema(categoryID string) map[string]interface{} {
 	return base
 }
 
-func readEmbed(fs embed.FS, path string) (string, error) {
-	data, err := fs.ReadFile(path)
+func readPromptFile(path string) string {
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", err
+		return ""
 	}
-	return string(data), nil
-}
-
-func mustReadEmbed(fs embed.FS, path string) string {
-	content, err := readEmbed(fs, path)
-	if err != nil {
-		return fmt.Sprintf("<!-- prompt not found: %s -->", path)
-	}
-	return content
+	return strings.TrimSpace(string(data))
 }

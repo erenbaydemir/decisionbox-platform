@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/decisionbox-io/decisionbox/services/api/internal/database"
@@ -117,6 +118,12 @@ func (h *DiscoveriesHandler) TriggerDiscovery(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Parse optional areas filter from request body
+	var body struct {
+		Areas []string `json:"areas"` // optional: run only these areas
+	}
+	decodeJSON(r, &body) // ignore error — body is optional
+
 	// Create a run record
 	runID, err := h.runRepo.Create(r.Context(), projectID)
 	if err != nil {
@@ -125,10 +132,14 @@ func (h *DiscoveriesHandler) TriggerDiscovery(w http.ResponseWriter, r *http.Req
 	}
 
 	// Spawn the agent as a background subprocess
-	cmd := exec.Command("decisionbox-agent",
+	args := []string{
 		"--project-id", projectID,
 		"--run-id", runID,
-	)
+	}
+	if len(body.Areas) > 0 {
+		args = append(args, "--areas", strings.Join(body.Areas, ","))
+	}
+	cmd := exec.Command("decisionbox-agent", args...)
 
 	// Inherit environment (warehouse/LLM config from docker-compose)
 	cmd.Env = append(cmd.Environ(),

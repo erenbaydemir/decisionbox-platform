@@ -7,6 +7,12 @@ import (
 	"github.com/decisionbox-io/decisionbox/libs/go-common/domainpack"
 )
 
+func init() {
+	// Tests run from domain-packs/gaming/go/ — set paths relative to that
+	promptsPath = "../prompts"
+	profilesPath = "../profiles"
+}
+
 func TestGamingPackImplementsDiscoveryPack(t *testing.T) {
 	pack := NewPack()
 	dp, ok := domainpack.AsDiscoveryPack(pack)

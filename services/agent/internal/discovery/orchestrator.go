@@ -142,6 +142,7 @@ type DiscoveryOptions struct {
 	SkipSchemaCache       bool
 	IncludeExplorationLog bool
 	TestMode              bool
+	SelectedAreas         []string // if set, only run these analysis areas (partial run)
 }
 
 // RunDiscovery executes the complete discovery process.
@@ -246,12 +247,34 @@ func (o *Orchestrator) RunDiscovery(ctx context.Context, opts DiscoveryOptions) 
 	applog.WithField("steps", explorationResult.TotalSteps).Info("Exploration completed")
 
 	// Phase 4: Analysis by area (dynamic from domain pack)
+	// Filter areas if selective run requested
+	runAreas := analysisAreas
+	runType := "full"
+	if len(opts.SelectedAreas) > 0 {
+		runType = "partial"
+		selected := make(map[string]bool)
+		for _, a := range opts.SelectedAreas {
+			selected[a] = true
+		}
+		var filtered []domainpack.AnalysisArea
+		for _, a := range analysisAreas {
+			if selected[a.ID] {
+				filtered = append(filtered, a)
+			}
+		}
+		runAreas = filtered
+		applog.WithFields(applog.Fields{
+			"requested": opts.SelectedAreas,
+			"matched":   len(runAreas),
+		}).Info("Selective discovery — running subset of areas")
+	}
+
 	applog.Info("Phase 4: Running analysis by area")
 	o.statusReporter.SetPhase(ctx, models.PhaseAnalysis, "Analyzing discoveries by category...", 65)
 	allInsights := make([]models.Insight, 0)
 	analysisLog := make([]models.AnalysisStep, 0)
 
-	for _, area := range analysisAreas {
+	for _, area := range runAreas {
 		areaPrompt, ok := prompts.AnalysisAreas[area.ID]
 		if !ok {
 			applog.WithField("area", area.ID).Warn("No prompt for analysis area, skipping")
@@ -379,6 +402,8 @@ func (o *Orchestrator) RunDiscovery(ctx context.Context, opts DiscoveryOptions) 
 		ProjectID:       o.projectID,
 		Domain:          o.domain,
 		Category:        o.category,
+		RunType:         runType,
+		AreasRequested:  opts.SelectedAreas,
 		DiscoveryDate:   time.Now(),
 		TotalSteps:      explorationResult.TotalSteps,
 		Duration:        time.Since(startTime),

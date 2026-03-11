@@ -41,9 +41,14 @@ FROM alpine:3.21
 RUN apk add --no-cache ca-certificates tzdata && \
     addgroup -g 1000 -S app && adduser -u 1000 -S app -G app
 
-# Include both binaries — API spawns agent as subprocess
+WORKDIR /app
+
+# Include both binaries
 COPY --from=builder /decisionbox-api /usr/local/bin/decisionbox-api
 COPY --from=builder /decisionbox-agent /usr/local/bin/decisionbox-agent
+
+# Include domain pack prompts and profiles (read at runtime, not embedded)
+COPY --from=builder /workspace/domain-packs/ /app/domain-packs/
 
 EXPOSE 8080
 USER app

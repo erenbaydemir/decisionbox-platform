@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/decisionbox-io/decisionbox/libs/go-common/domainpack"
@@ -36,6 +37,7 @@ func main() {
 	var (
 		projectID       = flag.String("project-id", "", "Project ID to run discovery for (required)")
 		runID           = flag.String("run-id", "", "Discovery run ID for status updates (set by API)")
+		areasFlag       = flag.String("areas", "", "Comma-separated analysis areas to run (empty = all)")
 		maxSteps        = flag.Int("max-steps", 100, "Maximum exploration steps")
 		skipCache       = flag.Bool("skip-cache", false, "Force schema rediscovery")
 		includeLog      = flag.Bool("include-log", false, "Include full exploration log")
@@ -71,14 +73,25 @@ func main() {
 		"env":        cfg.Service.Environment,
 	}).Info("Starting DecisionBox Agent")
 
-	if err := runDiscovery(cfg, *projectID, *runID, *maxSteps, *skipCache, *includeLog, *testMode, *enableDebugLogs); err != nil {
+	// Parse areas filter
+	var selectedAreas []string
+	if *areasFlag != "" {
+		for _, a := range strings.Split(*areasFlag, ",") {
+			a = strings.TrimSpace(a)
+			if a != "" {
+				selectedAreas = append(selectedAreas, a)
+			}
+		}
+	}
+
+	if err := runDiscovery(cfg, *projectID, *runID, selectedAreas, *maxSteps, *skipCache, *includeLog, *testMode, *enableDebugLogs); err != nil {
 		applog.WithError(err).Fatal("Discovery failed")
 	}
 
 	applog.Info("Discovery completed successfully")
 }
 
-func runDiscovery(cfg *config.Config, projectID string, runID string, maxSteps int, skipCache, includeLog, testMode, enableDebugLogs bool) error {
+func runDiscovery(cfg *config.Config, projectID string, runID string, selectedAreas []string, maxSteps int, skipCache, includeLog, testMode, enableDebugLogs bool) error {
 	ctx := context.Background()
 
 	// Initialize MongoDB
@@ -212,6 +225,7 @@ func runDiscovery(cfg *config.Config, projectID string, runID string, maxSteps i
 		SkipSchemaCache:       skipCache,
 		IncludeExplorationLog: includeLog,
 		TestMode:              testMode,
+		SelectedAreas:         selectedAreas,
 	})
 	if err != nil {
 		return fmt.Errorf("discovery run failed: %w", err)
