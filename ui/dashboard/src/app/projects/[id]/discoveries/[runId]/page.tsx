@@ -232,7 +232,7 @@ export default function DiscoveryDetailPage() {
             </Title>
             <Stack gap="sm">
               {[...discovery.recommendations]
-                .sort((a, b) => b.priority - a.priority)
+                .sort((a, b) => a.priority - b.priority)
                 .map((rec, idx) => (
                   <RecommendationCard key={idx} rec={rec} />
                 ))}
@@ -366,7 +366,7 @@ export default function DiscoveryDetailPage() {
 }
 
 function RecommendationCard({ rec }: { rec: Recommendation }) {
-  const priorityColor = rec.priority >= 5 ? 'red' : rec.priority >= 4 ? 'orange' : 'blue';
+  const priorityColor = rec.priority <= 1 ? 'red' : rec.priority <= 2 ? 'orange' : 'blue';
   return (
     <Card withBorder p="md" radius="md"
       style={{ borderLeft: `3px solid var(--mantine-color-${priorityColor}-6)` }}>

@@ -33,7 +33,7 @@ Respond with ONLY valid JSON:
       "title": "Action - Context (e.g., 'Send Extra Lives After 3 Failures on Level 42')",
       "description": "Detailed explanation with numbers. Problem + Impact + Why this matters.",
       "category": "churn|engagement|monetization|difficulty",
-      "priority": 5,
+      "priority": 1,
       "target_segment": "Exact segment definition with criteria",
       "segment_size": 1234,
       "expected_impact": {
@@ -64,12 +64,12 @@ Respond with ONLY valid JSON:
 - Vague ("monitor metrics", "A/B test")
 - Missing numbers/specifics
 
-### Priority Scale:
-- **5 (Critical)**: Many players affected OR high revenue impact
-- **4 (High)**: Significant impact, implement soon
+### Priority Scale (P1 = highest):
+- **1 (Critical)**: Many players affected OR high revenue impact
+- **2 (High)**: Significant impact, implement soon
 - **3 (Medium)**: Moderate impact
-- **2 (Low)**: Nice to have
-- **1 (Optional)**: Minor improvement
+- **4 (Low)**: Nice to have
+- **5 (Optional)**: Minor improvement
 
 ## Discovered Insights
 
