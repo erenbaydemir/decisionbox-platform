@@ -2,12 +2,12 @@ package handler
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 
 	gollm "github.com/decisionbox-io/decisionbox/libs/go-common/llm"
 	gowarehouse "github.com/decisionbox-io/decisionbox/libs/go-common/warehouse"
 	"github.com/decisionbox-io/decisionbox/services/api/internal/database"
+	apilog "github.com/decisionbox-io/decisionbox/services/api/internal/log"
 	"github.com/decisionbox-io/decisionbox/services/api/internal/models"
 )
 
@@ -49,9 +49,12 @@ func SeedPricingFromProviders(ctx context.Context, repo *database.PricingReposit
 	}
 
 	if err := repo.Save(ctx, pricing); err != nil {
-		fmt.Printf("Warning: failed to seed pricing: %v\n", err)
+		apilog.WithError(err).Warn("Failed to seed pricing from providers")
 	} else {
-		fmt.Printf("Pricing seeded from %d LLM + %d warehouse providers\n", len(pricing.LLM), len(pricing.Warehouse))
+		apilog.WithFields(apilog.Fields{
+			"llm_providers":       len(pricing.LLM),
+			"warehouse_providers": len(pricing.Warehouse),
+		}).Info("Pricing seeded from registered providers")
 	}
 }
 

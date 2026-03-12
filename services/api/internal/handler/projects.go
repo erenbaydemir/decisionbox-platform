@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/decisionbox-io/decisionbox/services/api/internal/database"
+	apilog "github.com/decisionbox-io/decisionbox/services/api/internal/log"
 	"github.com/decisionbox-io/decisionbox/services/api/internal/models"
 )
 
@@ -45,9 +46,19 @@ func (h *ProjectsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.repo.Create(r.Context(), &p); err != nil {
+		apilog.WithError(err).Error("Failed to create project")
 		writeError(w, http.StatusInternalServerError, "failed to create project: "+err.Error())
 		return
 	}
+
+	apilog.WithFields(apilog.Fields{
+		"project_id": p.ID,
+		"name":       p.Name,
+		"domain":     p.Domain,
+		"category":   p.Category,
+		"llm":        p.LLM.Provider,
+		"warehouse":  p.Warehouse.Provider,
+	}).Info("Project created")
 
 	writeJSON(w, http.StatusCreated, p)
 }
@@ -132,10 +143,12 @@ func (h *ProjectsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.repo.Update(r.Context(), id, existing); err != nil {
+		apilog.WithFields(apilog.Fields{"project_id": id, "error": err.Error()}).Error("Failed to update project")
 		writeError(w, http.StatusInternalServerError, "failed to update project: "+err.Error())
 		return
 	}
 
+	apilog.WithField("project_id", id).Info("Project updated")
 	writeJSON(w, http.StatusOK, existing)
 }
 
@@ -145,9 +158,11 @@ func (h *ProjectsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
 	if err := h.repo.Delete(r.Context(), id); err != nil {
+		apilog.WithFields(apilog.Fields{"project_id": id, "error": err.Error()}).Error("Failed to delete project")
 		writeError(w, http.StatusInternalServerError, "failed to delete project: "+err.Error())
 		return
 	}
 
+	apilog.WithField("project_id", id).Info("Project deleted")
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
 }

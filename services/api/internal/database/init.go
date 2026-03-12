@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	apilog "github.com/decisionbox-io/decisionbox/services/api/internal/log"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -94,7 +95,10 @@ func InitDatabase(ctx context.Context, db *DB) error {
 				return fmt.Errorf("init %s indexes: %w", col.Name, err)
 			}
 		}
-		fmt.Printf("  collection: %s (%d indexes)\n", col.Name, len(col.Indexes))
+		apilog.WithFields(apilog.Fields{
+			"collection": col.Name,
+			"indexes":    len(col.Indexes),
+		}).Debug("Collection initialized")
 	}
 
 	return nil

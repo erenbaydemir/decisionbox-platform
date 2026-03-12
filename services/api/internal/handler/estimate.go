@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/decisionbox-io/decisionbox/services/api/internal/database"
+	apilog "github.com/decisionbox-io/decisionbox/services/api/internal/log"
 	"github.com/decisionbox-io/decisionbox/services/api/internal/models"
 )
 
@@ -60,12 +61,21 @@ func (h *EstimateHandler) Estimate(w http.ResponseWriter, r *http.Request) {
 		"MONGODB_DB="+getEnvOrDefault("MONGODB_DB", "decisionbox"),
 	)
 
+	apilog.WithFields(apilog.Fields{
+		"project_id": projectID,
+		"max_steps":  body.MaxSteps,
+		"areas":      body.Areas,
+	}).Info("Running cost estimation")
+
 	output, err := cmd.Output()
 	if err != nil {
 		errMsg := fmt.Sprintf("estimation failed: %s", err.Error())
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			errMsg += "\n" + string(exitErr.Stderr)
 		}
+		apilog.WithFields(apilog.Fields{
+			"project_id": projectID, "error": errMsg,
+		}).Error("Cost estimation failed")
 		writeError(w, http.StatusInternalServerError, errMsg)
 		return
 	}
@@ -82,6 +92,12 @@ func (h *EstimateHandler) Estimate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to parse estimate: "+err.Error())
 		return
 	}
+
+	apilog.WithFields(apilog.Fields{
+		"project_id": projectID,
+		"total_usd":  fmt.Sprintf("$%.4f", estimate.TotalUSD),
+		"llm_usd":    fmt.Sprintf("$%.4f", estimate.LLM.CostUSD),
+	}).Info("Cost estimation completed")
 
 	writeJSON(w, http.StatusOK, estimate)
 }

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,6 +11,7 @@ import (
 	gomongo "github.com/decisionbox-io/decisionbox/libs/go-common/mongodb"
 	"github.com/decisionbox-io/decisionbox/services/api/internal/config"
 	"github.com/decisionbox-io/decisionbox/services/api/internal/database"
+	apilog "github.com/decisionbox-io/decisionbox/services/api/internal/log"
 	"github.com/decisionbox-io/decisionbox/services/api/internal/server"
 
 	// Domain pack registrations
@@ -31,9 +31,14 @@ import (
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
+		apilog.WithError(err).Error("Failed to load config")
 		os.Exit(1)
 	}
+
+	apilog.WithFields(apilog.Fields{
+		"port":     cfg.Server.Port,
+		"mongodb":  cfg.MongoDB.Database,
+	}).Info("Starting DecisionBox API")
 
 	ctx := context.Background()
 
@@ -41,22 +46,25 @@ func main() {
 	mongoCfg := gomongo.DefaultConfig()
 	mongoCfg.URI = cfg.MongoDB.URI
 	mongoCfg.Database = cfg.MongoDB.Database
+
+	apilog.WithField("database", cfg.MongoDB.Database).Debug("Connecting to MongoDB")
 	mongoClient, err := gomongo.NewClient(ctx, mongoCfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "MongoDB connection failed: %v\n", err)
+		apilog.WithError(err).Error("MongoDB connection failed")
 		os.Exit(1)
 	}
 	defer mongoClient.Disconnect(ctx)
+	apilog.Info("Connected to MongoDB")
 
 	db := database.New(mongoClient)
 
 	// Initialize database (collections + indexes)
-	fmt.Println("Initializing database...")
+	apilog.Info("Initializing database collections and indexes")
 	if err := database.InitDatabase(ctx, db); err != nil {
-		fmt.Fprintf(os.Stderr, "Database init failed: %v\n", err)
+		apilog.WithError(err).Error("Database initialization failed")
 		os.Exit(1)
 	}
-	fmt.Println("Database initialized")
+	apilog.Info("Database initialized")
 
 	// HTTP server
 	handler := server.New(db)
@@ -73,20 +81,21 @@ func main() {
 	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
-		fmt.Printf("DecisionBox API starting on :%s\n", cfg.Server.Port)
+		apilog.WithField("port", cfg.Server.Port).Info("HTTP server listening")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
+			apilog.WithError(err).Error("HTTP server error")
 			os.Exit(1)
 		}
 	}()
 
 	<-done
-	fmt.Println("Shutting down...")
+	apilog.Info("Shutdown signal received, gracefully stopping")
 
 	shutdownCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		fmt.Fprintf(os.Stderr, "Shutdown error: %v\n", err)
+		apilog.WithError(err).Error("Shutdown error")
 	}
+	apilog.Info("Server stopped")
 }

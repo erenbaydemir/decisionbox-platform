@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/decisionbox-io/decisionbox/services/api/internal/database"
+	apilog "github.com/decisionbox-io/decisionbox/services/api/internal/log"
 )
 
 func getEnvOrDefault(key, def string) string {
@@ -170,10 +171,21 @@ func (h *DiscoveriesHandler) TriggerDiscovery(w http.ResponseWriter, r *http.Req
 	)
 
 	if err := cmd.Start(); err != nil {
+		apilog.WithFields(apilog.Fields{
+			"project_id": projectID, "run_id": runID, "error": err.Error(),
+		}).Error("Failed to start agent subprocess")
 		h.runRepo.Fail(r.Context(), runID, "failed to start: "+err.Error())
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to start agent: %s", err.Error()))
 		return
 	}
+
+	apilog.WithFields(apilog.Fields{
+		"project_id": projectID,
+		"run_id":     runID,
+		"pid":        cmd.Process.Pid,
+		"areas":      body.Areas,
+		"max_steps":  body.MaxSteps,
+	}).Info("Discovery agent spawned")
 
 	// Track the process so we can cancel it
 	h.tracker.Track(runID, cmd.Process)
@@ -183,7 +195,12 @@ func (h *DiscoveriesHandler) TriggerDiscovery(w http.ResponseWriter, r *http.Req
 		err := cmd.Wait()
 		h.tracker.Remove(runID)
 		if err != nil {
+			apilog.WithFields(apilog.Fields{
+				"run_id": runID, "error": err.Error(),
+			}).Warn("Agent process exited with error")
 			h.runRepo.Fail(context.Background(), runID, "agent exited with error: "+err.Error())
+		} else {
+			apilog.WithField("run_id", runID).Info("Agent process completed")
 		}
 	}()
 

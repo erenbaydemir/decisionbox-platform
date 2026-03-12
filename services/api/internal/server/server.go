@@ -2,11 +2,11 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 
 	"github.com/decisionbox-io/decisionbox/services/api/internal/database"
 	"github.com/decisionbox-io/decisionbox/services/api/internal/handler"
+	apilog "github.com/decisionbox-io/decisionbox/services/api/internal/log"
 )
 
 // New creates an HTTP server with all routes registered.
@@ -24,9 +24,9 @@ func New(db *database.DB) http.Handler {
 	// Clean up stale runs from previous container lifecycle
 	cleaned, err := runRepo.CleanupStaleRuns(context.Background())
 	if err != nil {
-		fmt.Printf("Warning: failed to cleanup stale runs: %v\n", err)
+		apilog.WithError(err).Warn("Failed to cleanup stale runs")
 	} else if cleaned > 0 {
-		fmt.Printf("Cleaned up %d stale discovery runs\n", cleaned)
+		apilog.WithField("count", cleaned).Info("Cleaned up stale discovery runs")
 	}
 
 	// Process tracker for agent subprocesses
@@ -94,8 +94,8 @@ func New(db *database.DB) http.Handler {
 	// Cost estimation
 	mux.HandleFunc("POST /api/v1/projects/{id}/discover/estimate", estimate.Estimate)
 
-	// CORS middleware for dashboard
-	return corsMiddleware(mux)
+	// Middleware chain: CORS → Logging → Router
+	return corsMiddleware(handler.LoggingMiddleware(mux))
 }
 
 func corsMiddleware(next http.Handler) http.Handler {
