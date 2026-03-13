@@ -169,12 +169,6 @@ export default function Shell({ children, breadcrumb, actions }: ShellProps) {
 
             <NavItem
               href={`/projects/${projectId}/settings`}
-              icon={<IconDatabase size={16} />}
-              label="Data sources"
-              active={false}
-            />
-            <NavItem
-              href={`/projects/${projectId}/settings`}
               icon={<IconSettings size={16} />}
               label="Settings"
               active={isActive(`/projects/${projectId}/settings`)}
