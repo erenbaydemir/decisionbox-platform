@@ -488,28 +488,45 @@ function ArrayOfObjectsEditor({ title, itemSchema, items, onChange }: {
           <IconPlus size={14} />
         </ActionIcon>
       </Group>
-      <Stack gap="xs">
+      <Stack gap="sm">
         {items.map((item, idx) => (
           <div key={idx} style={{
             border: '1px solid var(--db-border-default)',
-            borderRadius: 'var(--db-radius)',
-            padding: 8, background: 'var(--db-bg-muted)',
+            borderRadius: 'var(--db-radius-lg)',
+            padding: 16, background: 'var(--db-bg-muted)',
           }}>
-            <Group justify="space-between" mb={4}>
-              <Text size="xs" c="dimmed">#{idx + 1}</Text>
+            <Group justify="space-between" mb={8}>
+              <Text size="xs" fw={500} c="dimmed">#{idx + 1}</Text>
               <CloseButton size="xs" onClick={() => removeItem(idx)} />
             </Group>
-            <Group grow gap="xs" wrap="wrap">
-              {Object.entries(fields).map(([fieldKey, fieldSchema]) => (
-                <SchemaField key={fieldKey} fieldKey={fieldKey} fieldSchema={fieldSchema}
-                  value={item[fieldKey]}
-                  onChange={(v) => updateItem(idx, fieldKey, v)} />
-              ))}
-            </Group>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, 1fr)',
+              gap: 12,
+            }}>
+              {Object.entries(fields).map(([fieldKey, fieldSchema]) => {
+                const fs = fieldSchema as { type?: string; title?: string };
+                // Full-width for text fields (description, name) and nested arrays
+                const isWide = fs.type === 'array' || fieldKey === 'description' || fieldKey === 'name';
+                return (
+                  <div key={fieldKey} style={{ gridColumn: isWide ? '1 / -1' : undefined }}>
+                    <SchemaField fieldKey={fieldKey} fieldSchema={fieldSchema}
+                      value={item[fieldKey]}
+                      onChange={(v) => updateItem(idx, fieldKey, v)} />
+                  </div>
+                );
+              })}
+            </div>
           </div>
         ))}
         {items.length === 0 && (
-          <Text size="xs" c="dimmed" ta="center" py="xs">No items. Click + to add.</Text>
+          <div style={{
+            border: '2px dashed var(--db-border-strong)',
+            borderRadius: 'var(--db-radius)',
+            padding: '20px', textAlign: 'center',
+          }}>
+            <Text size="xs" c="dimmed">No items yet. Click + to add.</Text>
+          </div>
         )}
       </Stack>
     </div>
@@ -523,6 +540,7 @@ function InlineArrayEditor({ title, itemSchema, items, onChange }: {
   onChange: (items: unknown) => void;
 }) {
   const fields = itemSchema.properties || {};
+  const fieldEntries = Object.entries(fields);
   const addItem = () => onChange([...items, {}]);
   const removeItem = (idx: number) => onChange(items.filter((_, i) => i !== idx));
   const updateItem = (idx: number, field: string, value: unknown) => {
@@ -533,16 +551,33 @@ function InlineArrayEditor({ title, itemSchema, items, onChange }: {
 
   return (
     <div>
-      <Group gap={4} mb={4}>
+      <Group justify="space-between" mb={6}>
         <Text size="xs" fw={600}>{title}</Text>
         <ActionIcon variant="subtle" size="xs" onClick={addItem}>
           <IconPlus size={12} />
         </ActionIcon>
       </Group>
-      <Stack gap={4}>
+
+      {/* Column headers */}
+      {items.length > 0 && (
+        <Group gap={8} mb={4} wrap="nowrap" style={{ paddingRight: 28 }}>
+          {fieldEntries.map(([fk, fs]) => {
+            const f = fs as { title?: string; type?: string };
+            const isNumber = f.type === 'integer' || f.type === 'number';
+            return (
+              <Text key={fk} size="xs" c="dimmed" fw={500}
+                style={{ flex: isNumber ? 1 : 2, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.3px' }}>
+                {f.title || fk}
+              </Text>
+            );
+          })}
+        </Group>
+      )}
+
+      <Stack gap={6}>
         {items.map((item, idx) => (
-          <Group key={idx} gap={4} wrap="nowrap">
-            {Object.entries(fields).map(([fk, fs]) => {
+          <Group key={idx} gap={8} wrap="nowrap" align="center">
+            {fieldEntries.map(([fk, fs]) => {
               const f = fs as { type?: string; title?: string };
               if (f.type === 'integer' || f.type === 'number') {
                 return (
@@ -561,6 +596,10 @@ function InlineArrayEditor({ title, itemSchema, items, onChange }: {
           </Group>
         ))}
       </Stack>
+
+      {items.length === 0 && (
+        <Text size="xs" c="dimmed" ta="center" py="xs">No items. Click + to add.</Text>
+      )}
     </div>
   );
 }
