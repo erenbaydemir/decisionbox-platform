@@ -517,11 +517,24 @@ function LiveRunPanel({ run, onCancel }: { run: DiscoveryRunStatus; onCancel: ()
         {/* Stats row */}
         <div style={{
           display: 'flex', gap: 20, fontSize: 12, color: 'var(--db-text-secondary)',
-          padding: '10px 0 14px',
+          padding: '10px 0 14px', flexWrap: 'wrap',
         }}>
           <span>{run.total_queries} queries</span>
           <span>{run.insights_found} insights</span>
-          <span>{elapsed}s elapsed</span>
+          <span>{formatElapsed(elapsed)}</span>
+          <span style={{ color: 'var(--db-text-tertiary)' }}>
+            Started: {new Date(run.started_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' })}
+          </span>
+          {run.updated_at && (
+            <span style={{ color: 'var(--db-text-tertiary)' }}>
+              Updated: {new Date(run.updated_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' })}
+            </span>
+          )}
+          {isDone && run.completed_at && (
+            <span style={{ color: 'var(--db-text-tertiary)' }}>
+              Completed: {new Date(run.completed_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' })}
+            </span>
+          )}
         </div>
 
         {run.error && (
@@ -655,6 +668,15 @@ function StepRow({ step, index, isLast, isActive }: {
       {hasDetails && (
         <Collapse in={opened}>
           <div style={{ padding: '0 20px 14px 66px', fontSize: 13, lineHeight: 1.6, color: 'var(--db-text-secondary)' }}>
+            {/* Step metadata */}
+            <div style={{ display: 'flex', gap: 16, fontSize: 11, color: 'var(--db-text-tertiary)', marginBottom: 6 }}>
+              {step.timestamp && (
+                <span>At: {new Date(step.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' })}</span>
+              )}
+              {step.query_time_ms > 0 && <span>Query: {step.query_time_ms}ms</span>}
+              {step.row_count > 0 && <span>Rows: {step.row_count}</span>}
+              {step.query_fixed && <span style={{ color: 'var(--db-amber-text)' }}>Auto-fixed</span>}
+            </div>
             {thinking.length > 40 && (
               <div style={{ fontStyle: 'italic', color: 'var(--db-text-tertiary)', marginBottom: 6 }}>{thinking}</div>
             )}
@@ -788,6 +810,16 @@ function GhostButton({ onClick, children, small }: { onClick: () => void; childr
 }
 
 /* ========== Helpers ========== */
+
+function formatElapsed(seconds: number): string {
+  if (seconds < 60) return `${seconds}s elapsed`;
+  const min = Math.floor(seconds / 60);
+  const sec = seconds % 60;
+  if (min < 60) return `${min}m ${sec}s elapsed`;
+  const hr = Math.floor(min / 60);
+  const remainMin = min % 60;
+  return `${hr}h ${remainMin}m elapsed`;
+}
 
 function formatTimeAgo(date: Date): string {
   const diff = Date.now() - date.getTime();
