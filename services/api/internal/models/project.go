@@ -46,7 +46,6 @@ type WarehouseConfig struct {
 	Provider    string   `bson:"provider" json:"provider"`
 	ProjectID   string   `bson:"project_id,omitempty" json:"project_id,omitempty"`
 	Datasets    []string `bson:"datasets" json:"datasets"`
-	Dataset     string   `bson:"dataset,omitempty" json:"dataset,omitempty"`
 	Location    string   `bson:"location,omitempty" json:"location,omitempty"`
 	FilterField string   `bson:"filter_field,omitempty" json:"filter_field,omitempty"`
 	FilterValue string   `bson:"filter_value,omitempty" json:"filter_value,omitempty"`

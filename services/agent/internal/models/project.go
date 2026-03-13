@@ -66,20 +66,13 @@ type WarehouseConfig struct {
 	Location  string `bson:"location,omitempty" json:"location,omitempty"`
 
 	Datasets []string `bson:"datasets" json:"datasets"`
-	Dataset  string   `bson:"dataset,omitempty" json:"dataset,omitempty"` // backward compat
 
 	FilterField string `bson:"filter_field,omitempty" json:"filter_field,omitempty"`
 	FilterValue string `bson:"filter_value,omitempty" json:"filter_value,omitempty"`
 }
 
 func (w *WarehouseConfig) GetDatasets() []string {
-	if len(w.Datasets) > 0 {
-		return w.Datasets
-	}
-	if w.Dataset != "" {
-		return []string{w.Dataset}
-	}
-	return nil
+	return w.Datasets
 }
 
 type LLMConfig struct {

@@ -26,7 +26,7 @@ import (
 	_ "github.com/decisionbox-io/decisionbox/providers/llm/claude"     // registers "claude"
 	_ "github.com/decisionbox-io/decisionbox/providers/llm/openai"     // registers "openai"
 	_ "github.com/decisionbox-io/decisionbox/providers/llm/ollama"     // registers "ollama"
-	_ "github.com/decisionbox-io/decisionbox/providers/llm/vertex-ai"  // registers "vertex-ai" (stub)
+	_ "github.com/decisionbox-io/decisionbox/providers/llm/vertex-ai"  // registers "vertex-ai"
 	_ "github.com/decisionbox-io/decisionbox/providers/llm/bedrock"    // registers "bedrock" (stub)
 
 	// Warehouse provider registrations
@@ -164,33 +164,26 @@ func runDiscovery(cfg *config.Config, projectID string, runID string, selectedAr
 			secretsCfg.EncryptionKey,
 		)
 		if spErr != nil {
-			applog.WithError(spErr).Warn("Failed to create secret provider, falling back to env var")
-		} else {
-			secretProvider = sp
+			return fmt.Errorf("failed to create secret provider: %w", spErr)
 		}
+		secretProvider = sp
 	} else {
 		sp, spErr := gosecrets.NewProvider(secretsCfg)
 		if spErr != nil {
-			applog.WithError(spErr).Warn("Failed to create secret provider, falling back to env var")
-		} else {
-			secretProvider = sp
+			return fmt.Errorf("failed to create secret provider: %w", spErr)
 		}
+		secretProvider = sp
 	}
+	applog.WithField("provider", secretsCfg.Provider).Info("Secret provider initialized")
 
-	// Read LLM API key: secret provider first, then env var fallback
+	// Read LLM API key from secret provider (per-project)
 	apiKey := ""
-	if secretProvider != nil {
-		key, err := secretProvider.Get(ctx, projectID, "llm-api-key")
-		if err == nil && key != "" {
-			apiKey = key
-			applog.Info("LLM API key loaded from secret provider")
-		} else if err != nil && err != gosecrets.ErrNotFound {
-			applog.WithError(err).Warn("Failed to read secret, falling back to env var")
-		}
-	}
-	if apiKey == "" && cfg.LLM.APIKey != "" {
-		apiKey = cfg.LLM.APIKey
-		applog.Debug("LLM API key loaded from LLM_API_KEY env var (fallback)")
+	key, err := secretProvider.Get(ctx, projectID, "llm-api-key")
+	if err == nil && key != "" {
+		apiKey = key
+		applog.Info("LLM API key loaded from secret provider")
+	} else if err != nil && err != gosecrets.ErrNotFound {
+		applog.WithError(err).Warn("Failed to read LLM API key from secret provider")
 	}
 
 	// LLM config comes from project + secrets

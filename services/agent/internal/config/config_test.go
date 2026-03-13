@@ -57,31 +57,16 @@ func TestIsProduction(t *testing.T) {
 	}
 }
 
-func TestLLMAPIKeyOptional(t *testing.T) {
-	// API key is not required at config level — it's optional
-	// (vertex-ai, ollama don't need it)
-	cfg := &Config{}
-	cfg.MongoDB.URI = "mongodb://localhost"
-
-	err := cfg.Validate()
-	if err != nil {
-		t.Errorf("should pass without LLM_API_KEY: %v", err)
-	}
-}
-
-func TestLoadWithAPIKey(t *testing.T) {
+func TestLLMConfigDefaults(t *testing.T) {
+	// LLM config has no API key — secrets come from secret provider
 	os.Setenv("MONGODB_URI", "mongodb://localhost:27017")
-	os.Setenv("LLM_API_KEY", "test-key")
-	defer func() {
-		os.Unsetenv("MONGODB_URI")
-		os.Unsetenv("LLM_API_KEY")
-	}()
+	defer os.Unsetenv("MONGODB_URI")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error: %v", err)
 	}
-	if cfg.LLM.APIKey != "test-key" {
-		t.Errorf("APIKey = %q", cfg.LLM.APIKey)
+	if cfg.LLM.MaxRetries != 3 {
+		t.Errorf("MaxRetries = %d, want 3", cfg.LLM.MaxRetries)
 	}
 }

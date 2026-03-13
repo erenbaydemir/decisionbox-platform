@@ -55,6 +55,9 @@ func (h *EstimateHandler) Estimate(w http.ResponseWriter, r *http.Request) {
 		args = append(args, "--areas", strings.Join(body.Areas, ","))
 	}
 
+	// Estimation always runs as subprocess (synchronous, captures stdout).
+	// Unlike discovery which uses the Runner interface (subprocess or K8s Job),
+	// estimation is fast (~10s) and needs the JSON result immediately.
 	cmd := exec.Command("decisionbox-agent", args...)
 	cmd.Env = append(os.Environ(),
 		"MONGODB_URI="+getEnvOrDefault("MONGODB_URI", "mongodb://localhost:27017"),

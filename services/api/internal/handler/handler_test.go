@@ -5,9 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -329,107 +327,11 @@ func TestProvidersHandler_LLMProviderHasConfigFields(t *testing.T) {
 
 // --- Process Tracker ---
 
-func TestProcessTracker_TrackAndRemove(t *testing.T) {
-	tracker := NewProcessTracker()
-	cmd := sleepCmd()
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("failed to start: %v", err)
-	}
-	defer cmd.Process.Kill()
-
-	tracker.Track("run-1", cmd.Process)
-	if !tracker.IsRunning("run-1") {
-		t.Error("should be running")
-	}
-
-	tracker.Remove("run-1")
-	if tracker.IsRunning("run-1") {
-		t.Error("should not be running after Remove")
-	}
-}
-
-func TestProcessTracker_Kill(t *testing.T) {
-	tracker := NewProcessTracker()
-	cmd := sleepCmd()
-	cmd.Start()
-	tracker.Track("run-2", cmd.Process)
-
-	if !tracker.Kill("run-2") {
-		t.Error("Kill should return true")
-	}
-	if tracker.IsRunning("run-2") {
-		t.Error("should not be running after Kill")
-	}
-	cmd.Wait()
-}
-
-func TestProcessTracker_KillNotFound(t *testing.T) {
-	tracker := NewProcessTracker()
-	if tracker.Kill("nonexistent") {
-		t.Error("should return false")
-	}
-}
-
-func TestProcessTracker_IsRunningEmpty(t *testing.T) {
-	tracker := NewProcessTracker()
-	if tracker.IsRunning("any") {
-		t.Error("should return false")
-	}
-}
-
-func TestProcessTracker_MultipleRuns(t *testing.T) {
-	tracker := NewProcessTracker()
-	cmd1 := sleepCmd()
-	cmd2 := sleepCmd()
-	cmd1.Start()
-	cmd2.Start()
-	defer cmd1.Process.Kill()
-	defer cmd2.Process.Kill()
-
-	tracker.Track("r1", cmd1.Process)
-	tracker.Track("r2", cmd2.Process)
-
-	tracker.Kill("r1")
-	cmd1.Wait()
-
-	if tracker.IsRunning("r1") {
-		t.Error("r1 should be killed")
-	}
-	if !tracker.IsRunning("r2") {
-		t.Error("r2 should still be running")
-	}
-}
-
 func TestDiscoveriesHandler_HasRunner(t *testing.T) {
 	r := runner.NewSubprocessRunner()
 	h := &DiscoveriesHandler{agentRunner: r}
 	if h.agentRunner == nil {
 		t.Error("handler should have agent runner")
-	}
-}
-
-func TestProcessTracker_ConcurrentSafe(t *testing.T) {
-	tracker := NewProcessTracker()
-	done := make(chan bool, 10)
-	for i := 0; i < 5; i++ {
-		go func() {
-			tracker.IsRunning("test")
-			done <- true
-		}()
-		go func() {
-			cmd := sleepCmd()
-			cmd.Start()
-			if cmd.Process != nil {
-				tracker.Track("concurrent", cmd.Process)
-				tracker.Remove("concurrent")
-				cmd.Process.Kill()
-				cmd.Wait()
-			}
-			done <- true
-		}()
-	}
-	for i := 0; i < 10; i++ {
-		<-done
 	}
 }
 
@@ -467,9 +369,3 @@ func TestLLMProvider_ClaudePricing(t *testing.T) {
 	}
 }
 
-func sleepCmd() *exec.Cmd {
-	if runtime.GOOS == "windows" {
-		return exec.Command("timeout", "/t", "60")
-	}
-	return exec.Command("sleep", "60")
-}

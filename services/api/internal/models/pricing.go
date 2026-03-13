@@ -3,7 +3,7 @@ package models
 import "time"
 
 // Pricing holds all provider pricing data.
-// Seeded from configs/pricing.json, stored in MongoDB, editable via UI.
+// Seeded from registered providers on API startup, stored in MongoDB, editable via UI.
 type Pricing struct {
 	ID        string                            `bson:"_id,omitempty" json:"id"`
 	LLM       map[string]map[string]TokenPrice  `bson:"llm" json:"llm"`             // provider -> model -> price

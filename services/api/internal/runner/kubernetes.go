@@ -65,9 +65,18 @@ func (r *KubernetesRunner) Run(ctx context.Context, opts RunOptions) error {
 		{Name: "MONGODB_DB", Value: getEnv("MONGODB_DB", "decisionbox")},
 		{Name: "DOMAIN_PACK_PATH", Value: "/app/domain-packs"},
 	}
-	// Pass LLM_API_KEY if set
-	if apiKey := getEnv("LLM_API_KEY", ""); apiKey != "" {
-		envVars = append(envVars, corev1.EnvVar{Name: "LLM_API_KEY", Value: apiKey})
+	// Pass secret provider config so agent reads secrets from same store
+	if sp := getEnv("SECRET_PROVIDER", ""); sp != "" {
+		envVars = append(envVars, corev1.EnvVar{Name: "SECRET_PROVIDER", Value: sp})
+	}
+	if ns := getEnv("SECRET_NAMESPACE", ""); ns != "" {
+		envVars = append(envVars, corev1.EnvVar{Name: "SECRET_NAMESPACE", Value: ns})
+	}
+	if ek := getEnv("SECRET_ENCRYPTION_KEY", ""); ek != "" {
+		envVars = append(envVars, corev1.EnvVar{Name: "SECRET_ENCRYPTION_KEY", Value: ek})
+	}
+	if gp := getEnv("SECRET_GCP_PROJECT_ID", ""); gp != "" {
+		envVars = append(envVars, corev1.EnvVar{Name: "SECRET_GCP_PROJECT_ID", Value: gp})
 	}
 
 	backoffLimit := int32(0) // no retries — agent handles its own

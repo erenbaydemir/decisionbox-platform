@@ -57,9 +57,8 @@ services:
       # LLM — Required for discovery (secret)
       # ============================================================
 
-      # API key for LLM provider. Required for: claude, openai. NOT needed for: vertex-ai, bedrock (use GCP/AWS IAM), ollama (local).
-      # Values: sk-ant-... (Claude), sk-... (OpenAI), empty for Vertex AI/Bedrock/Ollama
-      - LLM_API_KEY=${LLM_API_KEY:-}
+      # LLM API keys are stored per-project in the secret provider (not env vars).
+      # Set them via the dashboard: Project Settings → Secrets → LLM API Key
 
       # ============================================================
       # SECRETS — Per-project secret management

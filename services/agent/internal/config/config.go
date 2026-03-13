@@ -27,10 +27,10 @@ type MongoDBConfig struct {
 	Database string
 }
 
-// LLMConfig holds secrets that are NOT stored in the database.
+// LLMConfig holds operational LLM settings (not secrets).
+// API keys are read from the secret provider, not env vars.
 // Provider and model come from the project config in MongoDB.
 type LLMConfig struct {
-	APIKey         string
 	MaxRetries     int
 	Timeout        time.Duration
 	RequestDelayMs int
@@ -51,7 +51,6 @@ func Load() (*Config, error) {
 			Database: config.GetEnvOrDefault("MONGODB_DB", "decisionbox"),
 		},
 		LLM: LLMConfig{
-			APIKey:         config.GetEnv("LLM_API_KEY"),
 			MaxRetries:     config.GetEnvAsInt("LLM_MAX_RETRIES", 3),
 			Timeout:        parseDuration("LLM_TIMEOUT", "120s"),
 			RequestDelayMs: config.GetEnvAsInt("LLM_REQUEST_DELAY_MS", 1000),
