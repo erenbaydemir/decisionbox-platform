@@ -171,16 +171,24 @@ func (p *GCPProvider) List(ctx context.Context, projectID string) ([]secrets.Sec
 
 		// Get masked value
 		masked := "***"
+		warning := ""
 		resp, err := p.client.AccessSecretVersion(ctx, &secretmanagerpb.AccessSecretVersionRequest{
 			Name: name + "/versions/latest",
 		})
 		if err == nil {
 			masked = secrets.MaskValue(string(resp.Payload.Data))
+		} else {
+			if st, ok := status.FromError(err); ok && st.Code() == codes.PermissionDenied {
+				warning = "Access denied — service account needs secretmanager.versions.access permission"
+			} else {
+				warning = fmt.Sprintf("Failed to read value: %s", err.Error())
+			}
 		}
 
 		entries = append(entries, secrets.SecretEntry{
 			Key:       key,
 			Masked:    masked,
+			Warning:   warning,
 			UpdatedAt: secret.CreateTime.AsTime(),
 		})
 	}

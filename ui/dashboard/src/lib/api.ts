@@ -303,6 +303,7 @@ export interface SecretEntryResponse {
   key: string;
   masked: string;
   updated_at: string;
+  warning?: string;
 }
 
 // --- API Functions ---

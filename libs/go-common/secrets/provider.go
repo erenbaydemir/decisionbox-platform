@@ -37,8 +37,9 @@ type Provider interface {
 // Value is always masked — never returned in full via List.
 type SecretEntry struct {
 	Key       string    `json:"key"`
-	Masked    string    `json:"masked"`    // e.g., "sk-ant-***...DwAA"
+	Masked    string    `json:"masked"`              // e.g., "sk-ant-***...DwAA"
 	UpdatedAt time.Time `json:"updated_at"`
+	Warning   string    `json:"warning,omitempty"`    // e.g., permission denied
 }
 
 // MaskValue masks a secret value for display.

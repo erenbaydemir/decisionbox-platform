@@ -216,13 +216,18 @@ export default function ProjectSettingsPage() {
           {secretsList.length > 0 && (
             <Stack gap="xs" mb="md">
               {secretsList.map((s) => (
-                <Group key={s.key} justify="space-between" p="xs" style={{ borderRadius: 4, background: 'var(--mantine-color-gray-0)' }}>
-                  <Group gap="xs">
-                    <IconShieldCheck size={14} color="var(--mantine-color-green-6)" />
-                    <Text size="sm" fw={500}>{s.key}</Text>
+                <div key={s.key} style={{ borderRadius: 4, background: 'var(--mantine-color-gray-0)', padding: '8px' }}>
+                  <Group justify="space-between">
+                    <Group gap="xs">
+                      <IconShieldCheck size={14} color={s.warning ? 'var(--mantine-color-orange-6)' : 'var(--mantine-color-green-6)'} />
+                      <Text size="sm" fw={500}>{s.key}</Text>
+                    </Group>
+                    <Text size="xs" c="dimmed" style={{ fontFamily: 'monospace' }}>{s.masked}</Text>
                   </Group>
-                  <Text size="xs" c="dimmed" style={{ fontFamily: 'monospace' }}>{s.masked}</Text>
-                </Group>
+                  {s.warning && (
+                    <Text size="xs" c="orange" mt={4}>{s.warning}</Text>
+                  )}
+                </div>
               ))}
             </Stack>
           )}
@@ -233,7 +238,6 @@ export default function ProjectSettingsPage() {
               onChange={(v) => setNewSecretKey(v || 'llm-api-key')}
               data={[
                 { value: 'llm-api-key', label: 'LLM API Key' },
-                { value: 'warehouse-creds', label: 'Warehouse Credentials' },
               ]}
               allowDeselect={false} />
             <TextInput label="Value" size="xs" style={{ flex: 1 }}

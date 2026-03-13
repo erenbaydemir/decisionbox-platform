@@ -24,13 +24,16 @@ type AWSProvider struct {
 }
 
 func (p *AWSProvider) Get(ctx context.Context, projectID, key string) (string, error) {
-	return "", fmt.Errorf("aws secret provider not yet implemented (region=%s)", p.region)
+	return "", fmt.Errorf("aws secret provider not yet implemented — configure SECRET_PROVIDER=mongodb for local dev (region=%s)", p.region)
 }
 
 func (p *AWSProvider) Set(ctx context.Context, projectID, key, value string) error {
-	return fmt.Errorf("aws secret provider not yet implemented")
+	return fmt.Errorf("aws secret provider not yet implemented — configure SECRET_PROVIDER=mongodb for local dev")
 }
 
 func (p *AWSProvider) List(ctx context.Context, projectID string) ([]secrets.SecretEntry, error) {
-	return nil, fmt.Errorf("aws secret provider not yet implemented")
+	// Return empty with warning so UI shows a clear message
+	return []secrets.SecretEntry{
+		{Key: "(none)", Masked: "***", Warning: "AWS Secrets Manager provider not yet implemented. Use SECRET_PROVIDER=mongodb for now."},
+	}, nil
 }

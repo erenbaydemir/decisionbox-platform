@@ -24,13 +24,15 @@ type AzureProvider struct {
 }
 
 func (p *AzureProvider) Get(ctx context.Context, projectID, key string) (string, error) {
-	return "", fmt.Errorf("azure secret provider not yet implemented (vault=%s)", p.vaultURL)
+	return "", fmt.Errorf("azure secret provider not yet implemented — configure SECRET_PROVIDER=mongodb for local dev (vault=%s)", p.vaultURL)
 }
 
 func (p *AzureProvider) Set(ctx context.Context, projectID, key, value string) error {
-	return fmt.Errorf("azure secret provider not yet implemented")
+	return fmt.Errorf("azure secret provider not yet implemented — configure SECRET_PROVIDER=mongodb for local dev")
 }
 
 func (p *AzureProvider) List(ctx context.Context, projectID string) ([]secrets.SecretEntry, error) {
-	return nil, fmt.Errorf("azure secret provider not yet implemented")
+	return []secrets.SecretEntry{
+		{Key: "(none)", Masked: "***", Warning: "Azure Key Vault provider not yet implemented. Use SECRET_PROVIDER=mongodb for now."},
+	}, nil
 }
