@@ -13,6 +13,7 @@ require (
 	github.com/decisionbox-io/decisionbox/providers/llm/vertex-ai v0.0.0
 	github.com/decisionbox-io/decisionbox/providers/secrets/mongodb v0.0.0-00010101000000-000000000000
 	github.com/decisionbox-io/decisionbox/providers/warehouse/bigquery v0.0.0
+	github.com/decisionbox-io/decisionbox/providers/warehouse/redshift v0.0.0-00010101000000-000000000000
 	github.com/google/uuid v1.6.0
 	github.com/testcontainers/testcontainers-go/modules/gcloud v0.40.0
 	github.com/testcontainers/testcontainers-go/modules/mongodb v0.41.0
@@ -44,6 +45,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.50.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.6 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.19 // indirect
+	github.com/aws/aws-sdk-go-v2/service/redshiftdata v1.38.6 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.0.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.30.12 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.16 // indirect
@@ -142,4 +144,5 @@ replace (
 	github.com/decisionbox-io/decisionbox/providers/llm/vertex-ai => ../../providers/llm/vertex-ai
 	github.com/decisionbox-io/decisionbox/providers/secrets/mongodb => ../../providers/secrets/mongodb
 	github.com/decisionbox-io/decisionbox/providers/warehouse/bigquery => ../../providers/warehouse/bigquery
+	github.com/decisionbox-io/decisionbox/providers/warehouse/redshift => ../../providers/warehouse/redshift
 )

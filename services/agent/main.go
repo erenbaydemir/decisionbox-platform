@@ -30,7 +30,8 @@ import (
 	_ "github.com/decisionbox-io/decisionbox/providers/llm/bedrock"    // registers "bedrock" (stub)
 
 	// Warehouse provider registrations
-	_ "github.com/decisionbox-io/decisionbox/providers/warehouse/bigquery" // registers "bigquery"
+	_ "github.com/decisionbox-io/decisionbox/providers/warehouse/bigquery"  // registers "bigquery"
+	_ "github.com/decisionbox-io/decisionbox/providers/warehouse/redshift"  // registers "redshift"
 
 	// Domain pack registrations
 	_ "github.com/decisionbox-io/decisionbox/domain-packs/gaming/go" // registers "gaming"

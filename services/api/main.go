@@ -33,6 +33,7 @@ import (
 
 	// Warehouse provider registrations (for /api/v1/providers/warehouse listing)
 	_ "github.com/decisionbox-io/decisionbox/providers/warehouse/bigquery"
+	_ "github.com/decisionbox-io/decisionbox/providers/warehouse/redshift"
 )
 
 func main() {
