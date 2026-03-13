@@ -162,3 +162,85 @@ func TestIntegration_GeminiSystemPrompt(t *testing.T) {
 	}
 	t.Logf("Gemini system prompt: %q", resp.Content)
 }
+
+// --- Error path tests ---
+
+func TestIntegration_InvalidModel(t *testing.T) {
+	projectID := os.Getenv("INTEGRATION_TEST_VERTEX_PROJECT_ID")
+	if projectID == "" {
+		t.Skip("INTEGRATION_TEST_VERTEX_PROJECT_ID not set")
+	}
+
+	provider, err := gollm.NewProvider("vertex-ai", gollm.ProviderConfig{
+		"project_id": projectID,
+		"location":   "us-east5",
+		"model":      "claude-nonexistent-999",
+	})
+	if err != nil {
+		t.Fatalf("Provider creation should succeed: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err = provider.Chat(ctx, gollm.ChatRequest{
+		Messages:  []gollm.Message{{Role: "user", Content: "hello"}},
+		MaxTokens: 5,
+	})
+	if err == nil {
+		t.Fatal("should return error for invalid model")
+	}
+	t.Logf("Invalid model error: %v", err)
+}
+
+func TestIntegration_InvalidProjectID(t *testing.T) {
+	// This test always runs — uses a fake project ID
+	provider, err := gollm.NewProvider("vertex-ai", gollm.ProviderConfig{
+		"project_id": "nonexistent-project-xyz-999",
+		"location":   "us-east5",
+		"model":      "claude-haiku-4-5@20251001",
+	})
+	if err != nil {
+		t.Fatalf("Provider creation should succeed: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err = provider.Chat(ctx, gollm.ChatRequest{
+		Messages:  []gollm.Message{{Role: "user", Content: "hello"}},
+		MaxTokens: 5,
+	})
+	if err == nil {
+		t.Fatal("should return error for invalid project ID")
+	}
+	t.Logf("Invalid project error: %v", err)
+}
+
+func TestIntegration_ContextCancellation(t *testing.T) {
+	projectID := os.Getenv("INTEGRATION_TEST_VERTEX_PROJECT_ID")
+	if projectID == "" {
+		t.Skip("INTEGRATION_TEST_VERTEX_PROJECT_ID not set")
+	}
+
+	provider, err := gollm.NewProvider("vertex-ai", gollm.ProviderConfig{
+		"project_id": projectID,
+		"location":   "us-east5",
+		"model":      vertexClaudeModel(),
+	})
+	if err != nil {
+		t.Fatalf("Provider creation failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	_, err = provider.Chat(ctx, gollm.ChatRequest{
+		Messages:  []gollm.Message{{Role: "user", Content: "hello"}},
+		MaxTokens: 5,
+	})
+	if err == nil {
+		t.Fatal("should return error for cancelled context")
+	}
+	t.Logf("Cancelled context error: %v", err)
+}

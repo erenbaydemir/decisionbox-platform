@@ -5,6 +5,7 @@ package openai
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -126,4 +127,67 @@ func TestIntegration_ViaFactory(t *testing.T) {
 		t.Error("response should not be empty")
 	}
 	t.Logf("Factory response: %q", resp.Content)
+}
+
+// --- Error path tests ---
+
+func TestIntegration_InvalidAPIKey(t *testing.T) {
+	provider := NewOpenAIProvider("sk-invalid-key-12345", "gpt-4o-mini", "")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err := provider.Chat(ctx, gollm.ChatRequest{
+		Messages:  []gollm.Message{{Role: "user", Content: "hello"}},
+		MaxTokens: 5,
+	})
+	if err == nil {
+		t.Fatal("should return error for invalid API key")
+	}
+	if !strings.Contains(err.Error(), "API error") {
+		t.Errorf("error should mention API error, got: %v", err)
+	}
+	t.Logf("Invalid key error: %v", err)
+}
+
+func TestIntegration_InvalidModel(t *testing.T) {
+	apiKey := os.Getenv("INTEGRATION_TEST_OPENAI_API_KEY")
+	if apiKey == "" {
+		t.Skip("INTEGRATION_TEST_OPENAI_API_KEY not set")
+	}
+
+	provider := NewOpenAIProvider(apiKey, "gpt-nonexistent-999", "")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err := provider.Chat(ctx, gollm.ChatRequest{
+		Messages:  []gollm.Message{{Role: "user", Content: "hello"}},
+		MaxTokens: 5,
+	})
+	if err == nil {
+		t.Fatal("should return error for invalid model")
+	}
+	t.Logf("Invalid model error: %v", err)
+}
+
+func TestIntegration_ContextCancellation(t *testing.T) {
+	apiKey := os.Getenv("INTEGRATION_TEST_OPENAI_API_KEY")
+	if apiKey == "" {
+		t.Skip("INTEGRATION_TEST_OPENAI_API_KEY not set")
+	}
+
+	provider := NewOpenAIProvider(apiKey, "gpt-4o-mini", "")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	_, err := provider.Chat(ctx, gollm.ChatRequest{
+		Messages:  []gollm.Message{{Role: "user", Content: "hello"}},
+		MaxTokens: 5,
+	})
+	if err == nil {
+		t.Fatal("should return error for cancelled context")
+	}
+	t.Logf("Cancelled context error: %v", err)
 }

@@ -135,3 +135,89 @@ func TestIntegration_ModelOverride(t *testing.T) {
 	}
 	t.Logf("Bedrock model override: %q (stop=%s)", resp.Content, resp.StopReason)
 }
+
+// --- Error path tests ---
+
+func TestIntegration_InvalidModel(t *testing.T) {
+	region := os.Getenv("INTEGRATION_TEST_BEDROCK_REGION")
+	if region == "" {
+		t.Skip("INTEGRATION_TEST_BEDROCK_REGION not set")
+	}
+
+	provider, err := gollm.NewProvider("bedrock", gollm.ProviderConfig{
+		"region": region,
+		"model":  "anthropic.nonexistent-model-v1:0",
+	})
+	if err != nil {
+		t.Fatalf("Provider creation should succeed: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err = provider.Chat(ctx, gollm.ChatRequest{
+		Messages:  []gollm.Message{{Role: "user", Content: "hello"}},
+		MaxTokens: 5,
+	})
+	if err == nil {
+		t.Fatal("should return error for invalid model")
+	}
+	t.Logf("Invalid model error: %v", err)
+}
+
+func TestIntegration_UnsupportedModelPrefix(t *testing.T) {
+	region := os.Getenv("INTEGRATION_TEST_BEDROCK_REGION")
+	if region == "" {
+		t.Skip("INTEGRATION_TEST_BEDROCK_REGION not set")
+	}
+
+	provider, err := gollm.NewProvider("bedrock", gollm.ProviderConfig{
+		"region": region,
+		"model":  "meta.llama3-70b-instruct-v1:0",
+	})
+	if err != nil {
+		t.Fatalf("Provider creation should succeed: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err = provider.Chat(ctx, gollm.ChatRequest{
+		Messages:  []gollm.Message{{Role: "user", Content: "hello"}},
+		MaxTokens: 5,
+	})
+	if err == nil {
+		t.Fatal("should return error for unsupported model")
+	}
+	if !strings.Contains(err.Error(), "unsupported model") {
+		t.Errorf("error should mention unsupported model, got: %v", err)
+	}
+	t.Logf("Unsupported model error: %v", err)
+}
+
+func TestIntegration_ContextCancellation(t *testing.T) {
+	region := os.Getenv("INTEGRATION_TEST_BEDROCK_REGION")
+	if region == "" {
+		t.Skip("INTEGRATION_TEST_BEDROCK_REGION not set")
+	}
+
+	provider, err := gollm.NewProvider("bedrock", gollm.ProviderConfig{
+		"region": region,
+		"model":  bedrockModel(),
+	})
+	if err != nil {
+		t.Fatalf("Provider creation failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	_, err = provider.Chat(ctx, gollm.ChatRequest{
+		Messages:  []gollm.Message{{Role: "user", Content: "hello"}},
+		MaxTokens: 5,
+	})
+	if err == nil {
+		t.Fatal("should return error for cancelled context")
+	}
+	t.Logf("Cancelled context error: %v", err)
+}
