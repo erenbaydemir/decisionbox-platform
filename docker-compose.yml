@@ -65,11 +65,9 @@ services:
       # ============================================================
 
       # Secret provider
-      # Values: mongodb | gcp | aws | azure
       # mongodb: AES-256 encrypted MongoDB collection (default, local dev)
       # gcp: Google Cloud Secret Manager (production GCP)
       # aws: AWS Secrets Manager (production AWS) — not yet implemented
-      # azure: Azure Key Vault (production Azure) — not yet implemented
       - SECRET_PROVIDER=mongodb
 
       # Namespace prefix for all secrets (prevents conflicts in shared cloud accounts)
@@ -89,9 +87,7 @@ services:
       # Values: AWS region
       # - SECRET_AWS_REGION=us-east-1
 
-      # Azure Key Vault (only when SECRET_PROVIDER=azure)
       # Values: full vault URL
-      # - SECRET_AZURE_VAULT_URL=https://myvault.vault.azure.net
 
       # ============================================================
       # DOMAIN PACKS — Prompt & schema files
@@ -194,14 +190,12 @@ services:
       # ============================================================
 
       # Same secret provider config as API — agent reads secrets from same store
-      # Values: mongodb | gcp | aws | azure
       - SECRET_PROVIDER=mongodb
       - SECRET_NAMESPACE=decisionbox
       # Values: base64 string (generate with: openssl rand -base64 32)
       - SECRET_ENCRYPTION_KEY=${SECRET_ENCRYPTION_KEY:-}
       # - SECRET_GCP_PROJECT_ID=my-gcp-project
       # - SECRET_AWS_REGION=us-east-1
-      # - SECRET_AZURE_VAULT_URL=https://myvault.vault.azure.net
 
       # ============================================================
       # DOMAIN PACKS — Prompt & schema files

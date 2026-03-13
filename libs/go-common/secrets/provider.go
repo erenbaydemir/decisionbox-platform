@@ -53,10 +53,9 @@ func MaskValue(value string) string {
 
 // Config holds secret provider configuration.
 type Config struct {
-	Provider      string // mongodb | gcp | aws | azure
+	Provider      string // mongodb | gcp | aws
 	Namespace     string // prefix for all secrets (default: "decisionbox")
 	EncryptionKey string // for mongodb provider (base64-encoded 32-byte key)
 	GCPProjectID  string // for gcp provider
 	AWSRegion     string // for aws provider
-	AzureVaultURL string // for azure provider
 }
