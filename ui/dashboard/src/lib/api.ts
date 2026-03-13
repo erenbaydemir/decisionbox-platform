@@ -148,6 +148,7 @@ export interface Recommendation {
   segment_size: number;
   expected_impact: { metric: string; estimated_improvement: string; reasoning: string };
   actions: string[];
+  related_insight_ids?: string[];
   confidence: number;
 }
 

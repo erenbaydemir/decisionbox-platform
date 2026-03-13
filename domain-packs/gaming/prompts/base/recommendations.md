@@ -40,11 +40,14 @@ Respond with ONLY valid JSON:
         "Specific step 2",
         "Specific step 3"
       ],
+      "related_insight_ids": ["insight-id-1", "insight-id-2"],
       "confidence": 0.85
     }
   ]
 }
 ```
+
+**IMPORTANT:** Each recommendation MUST include `related_insight_ids` — an array of insight `id` values from the input data that this recommendation addresses. Copy the exact `id` values from the insights provided below.
 
 ## Requirements
 

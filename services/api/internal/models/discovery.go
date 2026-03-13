@@ -61,9 +61,10 @@ type Recommendation struct {
 	Priority    int    `bson:"priority" json:"priority"`
 	TargetSegment string `bson:"target_segment" json:"target_segment"`
 	SegmentSize   int    `bson:"segment_size" json:"segment_size"`
-	ExpectedImpact Impact `bson:"expected_impact" json:"expected_impact"`
-	Actions     []string `bson:"actions" json:"actions"`
-	Confidence  float64  `bson:"confidence" json:"confidence"`
+	ExpectedImpact    Impact   `bson:"expected_impact" json:"expected_impact"`
+	Actions           []string `bson:"actions" json:"actions"`
+	RelatedInsightIDs []string `bson:"related_insight_ids,omitempty" json:"related_insight_ids,omitempty"`
+	Confidence        float64  `bson:"confidence" json:"confidence"`
 }
 
 type Impact struct {

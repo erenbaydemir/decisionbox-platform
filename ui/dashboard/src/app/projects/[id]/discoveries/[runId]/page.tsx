@@ -198,6 +198,7 @@ export default function DiscoveryDetailPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {visibleRecs.map((rec, idx) => (
             <RecommendationCard key={idx} rec={rec} projectId={id} discoveryId={runId} idx={idx}
+              insights={insights}
               feedback={feedbackMap[`recommendation:${idx}`]}
               onFeedbackUpdate={(fb) => handleFeedbackUpdate('recommendation', String(idx), fb)} />
           ))}
@@ -415,8 +416,9 @@ function InsightRow({ insight, projectId, runId, idx, feedback, onFeedbackUpdate
 
 /* ========== Recommendation Card ========== */
 
-function RecommendationCard({ rec, projectId, discoveryId, idx, feedback, onFeedbackUpdate }: {
+function RecommendationCard({ rec, projectId, discoveryId, idx, insights, feedback, onFeedbackUpdate }: {
   rec: Recommendation; projectId: string; discoveryId: string; idx: number;
+  insights: Insight[];
   feedback?: Feedback | null; onFeedbackUpdate?: (fb: Feedback | null) => void;
 }) {
   const effortColors: Record<string, { bg: string; color: string }> = {
@@ -463,6 +465,32 @@ function RecommendationCard({ rec, projectId, discoveryId, idx, feedback, onFeed
         )}
         {rec.confidence > 0 && <span>Confidence: {rec.confidence}%</span>}
       </div>
+
+      {/* Related Insights */}
+      {rec.related_insight_ids && rec.related_insight_ids.length > 0 && (() => {
+        const relatedInsights = rec.related_insight_ids
+          .map(rid => insights.find(i => i.id === rid))
+          .filter(Boolean) as Insight[];
+        if (relatedInsights.length === 0) return null;
+        return (
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontSize: 11, color: 'var(--db-text-tertiary)', fontWeight: 500 }}>Addresses:</span>
+            {relatedInsights.map((insight, i) => (
+              <Link key={i} href={`/projects/${projectId}/discoveries/${discoveryId}/insights/${insight.id}`}
+                style={{
+                  fontSize: 11, padding: '1px 8px', borderRadius: 'var(--db-radius)',
+                  background: 'var(--db-blue-bg)', color: 'var(--db-blue-text)',
+                  textDecoration: 'none', transition: 'opacity 120ms ease',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.opacity = '0.8'; }}
+                onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
+              >
+                {insight.name}
+              </Link>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* Description */}
       {rec.description && (
