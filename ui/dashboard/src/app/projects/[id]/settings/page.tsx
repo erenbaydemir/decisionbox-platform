@@ -238,6 +238,7 @@ export default function ProjectSettingsPage() {
               onChange={(v) => setNewSecretKey(v || 'llm-api-key')}
               data={[
                 { value: 'llm-api-key', label: 'LLM API Key' },
+                { value: 'warehouse-credentials', label: 'Warehouse Credentials (SA Key JSON)' },
               ]}
               allowDeselect={false} />
             <TextInput label="Value" size="xs" style={{ flex: 1 }}

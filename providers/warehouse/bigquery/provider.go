@@ -27,10 +27,11 @@ func init() {
 		}
 
 		return NewBigQueryProvider(context.Background(), BigQueryConfig{
-			ProjectID: cfg["project_id"],
-			Dataset:   cfg["dataset"],
-			Location:  cfg["location"],
-			Timeout:   time.Duration(timeoutMin) * time.Minute,
+			ProjectID:       cfg["project_id"],
+			Dataset:         cfg["dataset"],
+			Location:        cfg["location"],
+			Timeout:         time.Duration(timeoutMin) * time.Minute,
+			CredentialsJSON: cfg["credentials_json"],
 		})
 	}, gowarehouse.ProviderMeta{
 		Name:        "Google BigQuery",
@@ -53,6 +54,11 @@ type BigQueryConfig struct {
 	Dataset   string
 	Location  string
 	Timeout   time.Duration
+	// CredentialsJSON is an optional GCP service account key (JSON).
+	// When set, BigQuery authenticates with this key instead of ADC.
+	// Use this when running outside GCP (e.g., on AWS, Azure, or on-prem).
+	// If empty, falls back to Application Default Credentials.
+	CredentialsJSON string
 	// ClientOptions allows passing custom options (e.g., emulator endpoint).
 	// Used for testing with BigQuery emulator.
 	ClientOptions []option.ClientOption
@@ -75,6 +81,12 @@ func NewBigQueryProvider(ctx context.Context, cfg BigQueryConfig) (*BigQueryProv
 	}
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 5 * time.Minute
+	}
+
+	// If credentials JSON provided, use it instead of ADC
+	if cfg.CredentialsJSON != "" {
+		cfg.ClientOptions = append(cfg.ClientOptions,
+			option.WithCredentialsJSON([]byte(cfg.CredentialsJSON)))
 	}
 
 	client, err := bq.NewClient(ctx, cfg.ProjectID, cfg.ClientOptions...)

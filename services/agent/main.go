@@ -134,27 +134,7 @@ func runDiscovery(cfg *config.Config, projectID string, runID string, selectedAr
 		return fmt.Errorf("domain pack %q does not support discovery", project.Domain)
 	}
 
-	// Warehouse config comes from project
-	datasets := project.Warehouse.GetDatasets()
-	if len(datasets) == 0 {
-		return fmt.Errorf("no datasets configured in project")
-	}
-
-	warehouseProvider, err := gowarehouse.NewProvider(project.Warehouse.Provider, gowarehouse.ProviderConfig{
-		"project_id": project.Warehouse.ProjectID,
-		"dataset":    datasets[0], // primary dataset for provider init
-		"location":   project.Warehouse.Location,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create warehouse provider (%s): %w", project.Warehouse.Provider, err)
-	}
-	defer warehouseProvider.Close()
-	applog.WithFields(applog.Fields{
-		"provider": project.Warehouse.Provider,
-		"datasets": datasets,
-	}).Info("Warehouse provider initialized")
-
-	// Initialize secret provider to read per-project API keys
+	// Initialize secret provider first — needed for both warehouse and LLM credentials
 	secretsCfg := gosecrets.LoadConfig()
 	var secretProvider gosecrets.Provider
 	if secretsCfg.Provider == "mongodb" || secretsCfg.Provider == "" {
@@ -175,6 +155,37 @@ func runDiscovery(cfg *config.Config, projectID string, runID string, selectedAr
 		secretProvider = sp
 	}
 	applog.WithField("provider", secretsCfg.Provider).Info("Secret provider initialized")
+
+	// Warehouse config comes from project
+	datasets := project.Warehouse.GetDatasets()
+	if len(datasets) == 0 {
+		return fmt.Errorf("no datasets configured in project")
+	}
+
+	whCfg := gowarehouse.ProviderConfig{
+		"project_id": project.Warehouse.ProjectID,
+		"dataset":    datasets[0],
+		"location":   project.Warehouse.Location,
+	}
+
+	// Read warehouse credentials from secret provider (for cross-cloud access)
+	whCreds, err := secretProvider.Get(ctx, projectID, "warehouse-credentials")
+	if err == nil && whCreds != "" {
+		whCfg["credentials_json"] = whCreds
+		applog.Info("Warehouse credentials loaded from secret provider")
+	} else if err != nil && err != gosecrets.ErrNotFound {
+		applog.WithError(err).Warn("Failed to read warehouse credentials from secret provider")
+	}
+
+	warehouseProvider, err := gowarehouse.NewProvider(project.Warehouse.Provider, whCfg)
+	if err != nil {
+		return fmt.Errorf("failed to create warehouse provider (%s): %w", project.Warehouse.Provider, err)
+	}
+	defer warehouseProvider.Close()
+	applog.WithFields(applog.Fields{
+		"provider": project.Warehouse.Provider,
+		"datasets": datasets,
+	}).Info("Warehouse provider initialized")
 
 	// Read LLM API key from secret provider (per-project)
 	apiKey := ""
