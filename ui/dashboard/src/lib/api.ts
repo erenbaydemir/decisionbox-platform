@@ -80,6 +80,7 @@ export interface WarehouseConfig {
   location: string;
   filter_field: string;
   filter_value: string;
+  config?: Record<string, string>; // provider-specific: workgroup, database, region, cluster_id, etc.
 }
 
 export interface LLMConfig {

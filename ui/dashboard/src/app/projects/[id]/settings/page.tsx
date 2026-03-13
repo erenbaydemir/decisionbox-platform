@@ -61,6 +61,7 @@ export default function ProjectSettingsPage() {
         setWhConfig({
           project_id: proj.warehouse.project_id || '',
           location: proj.warehouse.location || '',
+          ...(proj.warehouse.config || {}),
         });
         setDatasets((proj.warehouse.datasets || []).join(', '));
         setFilterField(proj.warehouse.filter_field || '');
@@ -104,6 +105,9 @@ export default function ProjectSettingsPage() {
           location: whConfig['location'] || '',
           filter_field: filterField,
           filter_value: filterValue,
+          config: Object.fromEntries(
+            Object.entries(whConfig).filter(([k]) => k !== 'project_id' && k !== 'location' && k !== 'dataset')
+          ),
         },
         llm: { provider: llmProvider, model: llmModel, config: llmConfig },
         schedule: { enabled: scheduleEnabled, cron_expr: scheduleCron, max_steps: maxSteps },

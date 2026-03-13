@@ -168,6 +168,10 @@ func runDiscovery(cfg *config.Config, projectID string, runID string, selectedAr
 		"dataset":    datasets[0],
 		"location":   project.Warehouse.Location,
 	}
+	// Merge provider-specific config (workgroup, database, region for Redshift, etc.)
+	for k, v := range project.Warehouse.Config {
+		whCfg[k] = v
+	}
 
 	// Read warehouse credentials from secret provider (for cross-cloud access)
 	whCreds, err := secretProvider.Get(ctx, projectID, "warehouse-credentials")

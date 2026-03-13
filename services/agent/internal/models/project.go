@@ -67,8 +67,9 @@ type WarehouseConfig struct {
 
 	Datasets []string `bson:"datasets" json:"datasets"`
 
-	FilterField string `bson:"filter_field,omitempty" json:"filter_field,omitempty"`
-	FilterValue string `bson:"filter_value,omitempty" json:"filter_value,omitempty"`
+	FilterField string            `bson:"filter_field,omitempty" json:"filter_field,omitempty"`
+	FilterValue string            `bson:"filter_value,omitempty" json:"filter_value,omitempty"`
+	Config      map[string]string `bson:"config,omitempty" json:"config,omitempty"` // provider-specific: workgroup, database, region, cluster_id, etc.
 }
 
 func (w *WarehouseConfig) GetDatasets() []string {

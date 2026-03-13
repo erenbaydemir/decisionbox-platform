@@ -90,6 +90,9 @@ export default function NewProjectPage() {
           location: warehouseConfig['location'] || '',
           filter_field: filterField,
           filter_value: filterValue,
+          config: Object.fromEntries(
+            Object.entries(warehouseConfig).filter(([k]) => k !== 'project_id' && k !== 'location' && k !== 'dataset')
+          ),
         },
         llm: {
           provider: llmProvider,

@@ -43,12 +43,13 @@ type AnalysisAreaConfig struct {
 }
 
 type WarehouseConfig struct {
-	Provider    string   `bson:"provider" json:"provider"`
-	ProjectID   string   `bson:"project_id,omitempty" json:"project_id,omitempty"`
-	Datasets    []string `bson:"datasets" json:"datasets"`
-	Location    string   `bson:"location,omitempty" json:"location,omitempty"`
-	FilterField string   `bson:"filter_field,omitempty" json:"filter_field,omitempty"`
-	FilterValue string   `bson:"filter_value,omitempty" json:"filter_value,omitempty"`
+	Provider    string            `bson:"provider" json:"provider"`
+	ProjectID   string            `bson:"project_id,omitempty" json:"project_id,omitempty"`
+	Datasets    []string          `bson:"datasets" json:"datasets"`
+	Location    string            `bson:"location,omitempty" json:"location,omitempty"`
+	FilterField string            `bson:"filter_field,omitempty" json:"filter_field,omitempty"`
+	FilterValue string            `bson:"filter_value,omitempty" json:"filter_value,omitempty"`
+	Config      map[string]string `bson:"config,omitempty" json:"config,omitempty"` // provider-specific: workgroup, database, region, cluster_id, etc.
 }
 
 type LLMConfig struct {
