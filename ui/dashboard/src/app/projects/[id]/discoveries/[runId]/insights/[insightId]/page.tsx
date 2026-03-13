@@ -11,7 +11,7 @@ import {
 import Link from 'next/link';
 import Shell from '@/components/layout/AppShell';
 import FeedbackButtons from '@/components/common/FeedbackButtons';
-import { api, DiscoveryResult, Feedback, Insight } from '@/lib/api';
+import { api, DiscoveryResult, Feedback, Insight, Recommendation } from '@/lib/api';
 
 const severityColor: Record<string, string> = {
   critical: 'red', high: 'orange', medium: 'yellow', low: 'gray',
@@ -181,6 +181,56 @@ export default function InsightDetailPage() {
             )}
           </Card>
         )}
+
+        {/* Related Recommendations */}
+        {(() => {
+          const relatedRecs = (discovery?.recommendations || []).filter(
+            (r) => r.related_insight_ids?.includes(insight.id)
+          );
+          if (relatedRecs.length === 0) return null;
+          return (
+            <Card withBorder p="lg">
+              <Title order={4} mb="sm">Related Recommendations</Title>
+              <Stack gap="xs">
+                {relatedRecs.map((rec, i) => (
+                  <div key={i} style={{
+                    border: '1px solid var(--db-border-default)',
+                    borderRadius: 'var(--db-radius)',
+                    padding: '10px 14px',
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                      <Text size="sm" fw={500}>{rec.title}</Text>
+                      <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                        <Badge size="xs" color={rec.priority <= 1 ? 'red' : rec.priority <= 2 ? 'orange' : 'blue'}>
+                          P{rec.priority}
+                        </Badge>
+                        {rec.expected_impact?.estimated_improvement && (
+                          <Badge size="xs" color="green" variant="light">
+                            {rec.expected_impact.estimated_improvement}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    {rec.description && (
+                      <Text size="xs" c="dimmed" mt={4} lineClamp={2}>{rec.description}</Text>
+                    )}
+                    {rec.actions && rec.actions.length > 0 && (
+                      <div style={{ marginTop: 6 }}>
+                        <Text size="xs" c="dimmed" fw={500}>Actions:</Text>
+                        {rec.actions.slice(0, 2).map((a, j) => (
+                          <Text key={j} size="xs" c="dimmed">  {j + 1}. {a}</Text>
+                        ))}
+                        {rec.actions.length > 2 && (
+                          <Text size="xs" c="dimmed">  ... +{rec.actions.length - 2} more</Text>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </Stack>
+            </Card>
+          );
+        })()}
 
         {/* How This Insight Was Found */}
         <Title order={3}>
