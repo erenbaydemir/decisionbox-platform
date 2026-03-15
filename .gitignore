@@ -47,6 +47,9 @@ service-account.json
 # Terraform
 *.tfstate
 *.tfstate.backup
+*.tfvars
+!*.tfvars.example
+tfplan
 .terraform/
 crash.log
 override.tf
