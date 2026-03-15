@@ -81,7 +81,14 @@ spec:
             {{- end }}
             {{- if index .Values "mongodb" "enabled" }}
             - name: MONGODB_URI
+              {{- if index .Values "mongodb" "auth" "enabled" }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "decisionbox-api.fullname" . }}-mongodb-uri
+                  key: mongodb-uri
+              {{- else }}
               value: {{ include "decisionbox-api.mongodbURI" . | quote }}
+              {{- end }}
             {{- end }}
           {{- with .Values.containerSecurityContext }}
           securityContext:
