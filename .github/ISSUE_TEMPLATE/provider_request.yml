@@ -1,0 +1,47 @@
+name: Provider Request
+description: Request a new LLM, warehouse, or secret provider
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        DecisionBox uses a plugin architecture for LLM, warehouse, and secret providers. Request a new one here.
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Provider Type
+      options:
+        - LLM Provider
+        - Warehouse Provider
+        - Secret Provider
+    validations:
+      required: true
+
+  - type: input
+    id: service
+    attributes:
+      label: Service Name
+      description: The specific service or product.
+      placeholder: e.g., Snowflake, Azure OpenAI, HashiCorp Vault
+    validations:
+      required: true
+
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Use Case
+      description: Why do you need this provider? What's your setup?
+      placeholder: We use Snowflake as our data warehouse and want to connect DecisionBox to it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Technical Details
+      description: Any relevant details about authentication, API, SDK, etc.
+      placeholder: |
+        - Auth: OAuth2 / API key / service account
+        - SDK: Official Go SDK available at github.com/...
+        - Docs: https://docs.example.com/api

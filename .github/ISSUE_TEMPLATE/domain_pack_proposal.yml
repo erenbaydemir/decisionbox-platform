@@ -1,0 +1,61 @@
+name: Domain Pack Proposal
+description: Propose a new domain pack for a specific industry or use case
+labels: ["component: domain-packs"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Domain packs bring DecisionBox to new industries. See the [gaming pack](domain-packs/gaming/) as an example.
+
+  - type: input
+    id: domain
+    attributes:
+      label: Domain Name
+      description: The industry or area this pack targets.
+      placeholder: e.g., E-commerce, SaaS, Healthcare, FinTech
+    validations:
+      required: true
+
+  - type: textarea
+    id: categories
+    attributes:
+      label: Categories
+      description: Sub-types within this domain.
+      placeholder: |
+        - B2C Retail: Direct-to-consumer online stores
+        - Subscription: Recurring billing SaaS products
+        - Marketplace: Multi-vendor platforms
+    validations:
+      required: true
+
+  - type: textarea
+    id: analysis_areas
+    attributes:
+      label: Analysis Areas
+      description: What types of insights should this pack discover?
+      placeholder: |
+        Base (all categories):
+        - Churn Risk: Users likely to stop using the product
+        - Revenue Trends: Revenue patterns and anomalies
+
+        Category-specific:
+        - Cart Abandonment (B2C): Users who add items but don't purchase
+        - Plan Upgrades (Subscription): Users who might upgrade
+    validations:
+      required: true
+
+  - type: textarea
+    id: data_sources
+    attributes:
+      label: Example Data Sources
+      description: What tables/data would this pack typically query?
+      placeholder: |
+        - users: user_id, signup_date, plan, status
+        - orders: order_id, user_id, total, created_at
+        - events: event_type, user_id, timestamp, properties
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Any other details, examples, or references.
