@@ -13,7 +13,7 @@ fullnameOverride: ""
 imagePullSecrets:
   - name: ghcr-secret
 
-serviceAccountName: ""
+serviceAccountName: "decisionbox-api"
 serviceAccountAnnotations: {}
   # iam.gke.io/gcp-service-account: "<cluster-name>-api@<project-id>.iam.gserviceaccount.com"
 
@@ -58,7 +58,7 @@ containerSecurityContext:
   seccompProfile:
     type: RuntimeDefault
 
-automountServiceAccountToken: false
+automountServiceAccountToken: true
 
 resources:
   requests:

@@ -163,6 +163,10 @@ serviceAccountAnnotations:
 
 automountServiceAccountToken: true
 
+extraEnvFrom:
+  - secretRef:
+      name: decisionbox-api-secrets
+
 env:
   SECRET_PROVIDER: "gcp"
   SECRET_NAMESPACE: "${SECRET_NS}"
@@ -285,6 +289,20 @@ echo ""
 prompt HELM_DEPLOY "Deploy services via Helm? (yes/no)" "no"
 
 if [[ "$HELM_DEPLOY" == "yes" ]]; then
+  # ─── Create API Secrets ───────────────────────────────────────────────
+  API_SECRET_NAME="decisionbox-api-secrets"
+  if kubectl get secret "$API_SECRET_NAME" -n "$K8S_NS" > /dev/null 2>&1; then
+    ok "Secret ${API_SECRET_NAME} already exists"
+  else
+    info "Generating SECRET_ENCRYPTION_KEY (AES-256)..."
+    ENCRYPTION_KEY=$(openssl rand -base64 32)
+    kubectl create namespace "$K8S_NS" --dry-run=client -o yaml | kubectl apply -f -
+    kubectl create secret generic "$API_SECRET_NAME" \
+      --from-literal=SECRET_ENCRYPTION_KEY="$ENCRYPTION_KEY" \
+      -n "$K8S_NS"
+    ok "Created secret ${API_SECRET_NAME} with SECRET_ENCRYPTION_KEY"
+  fi
+  echo ""
   prompt HELM_VALUES_ENV "Additional API values file, e.g. ${HELM_DIR}/values-prod.yaml (leave empty to skip)" "none"
 
   # ─── Deploy API ──────────────────────────────────────────────────────
