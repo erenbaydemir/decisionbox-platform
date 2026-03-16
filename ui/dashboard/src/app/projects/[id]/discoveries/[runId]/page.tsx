@@ -77,9 +77,10 @@ export default function DiscoveryDetailPage() {
   // Aggregate stats
   const totalInsights = insights.length;
   const criticalCount = insights.filter(i => i.severity === 'critical').length;
-  const avgConfidence = totalInsights > 0
-    ? Math.round(insights.reduce((sum, i) => sum + (i.confidence || 0), 0) / totalInsights)
+  const avgConfidenceRaw = totalInsights > 0
+    ? insights.reduce((sum, i) => sum + (i.confidence || 0), 0) / totalInsights
     : 0;
+  const avgConfidence = avgConfidenceRaw <= 1 ? Math.round(avgConfidenceRaw * 100) : Math.round(avgConfidenceRaw);
 
   const durationSec = discovery.duration ? (discovery.duration / 1000000000).toFixed(2) : '—';
 
@@ -377,8 +378,9 @@ function InsightRow({ insight, projectId, runId, idx, feedback, onFeedbackUpdate
   insight: Insight; projectId: string; runId: string; idx: number;
   feedback?: Feedback; onFeedbackUpdate: (fb: Feedback | null) => void;
 }) {
-  const confidenceColor = insight.confidence >= 80 ? 'var(--db-green-text)'
-    : insight.confidence >= 60 ? 'var(--db-amber-text)' : 'var(--db-red-text)';
+  const confidencePct = insight.confidence <= 1 ? Math.round(insight.confidence * 100) : Math.round(insight.confidence);
+  const confidenceColor = confidencePct >= 80 ? 'var(--db-green-text)'
+    : confidencePct >= 60 ? 'var(--db-amber-text)' : 'var(--db-red-text)';
 
   return (
     <tr style={{ borderBottom: '1px solid var(--db-border-default)' }}
@@ -417,10 +419,10 @@ function InsightRow({ insight, projectId, runId, idx, feedback, onFeedbackUpdate
           }}>
             <span style={{
               position: 'absolute', left: 0, top: 0, height: '100%', borderRadius: 2,
-              width: `${insight.confidence}%`, background: confidenceColor,
+              width: `${confidencePct}%`, background: confidenceColor,
             }} />
           </span>
-          <span style={{ fontSize: 11, color: 'var(--db-text-secondary)' }}>{insight.confidence}%</span>
+          <span style={{ fontSize: 11, color: 'var(--db-text-secondary)' }}>{confidencePct}%</span>
         </span>
       </td>
       <td style={{ padding: '10px 12px', verticalAlign: 'top' }}>
@@ -487,7 +489,7 @@ function RecommendationCard({ rec, projectId, discoveryId, idx, insights, feedba
         {rec.expected_impact?.metric && (
           <span>{rec.expected_impact.metric}</span>
         )}
-        {rec.confidence > 0 && <span>Confidence: {rec.confidence}%</span>}
+        {rec.confidence > 0 && <span>Confidence: {rec.confidence <= 1 ? Math.round(rec.confidence * 100) : Math.round(rec.confidence)}%</span>}
       </div>
 
       {/* Related Insights */}
