@@ -202,37 +202,14 @@ jobs:
             services/api/go.sum
             services/agent/go.sum
 
-      - name: Install Syft
-        uses: anchore/sbom-action/download-syft@v0
-
       - name: Install Grant
         run: curl -sSfL https://raw.githubusercontent.com/anchore/grant/main/install.sh | sh -s -- -b /usr/local/bin
 
-      - name: Generate SBOM (Agent)
-        run: syft dir:services/agent -o spdx-json > /tmp/sbom-agent.json
-
-      - name: Generate SBOM (API)
-        run: syft dir:services/api -o spdx-json > /tmp/sbom-api.json
-
       - name: Check Agent licenses
-        run: |
-          PACKAGES=$(jq '.packages | length' /tmp/sbom-agent.json)
-          echo "Agent SBOM packages: $PACKAGES"
-          if [ "${PACKAGES:-0}" -eq 0 ]; then
-            echo "Skipping license check (0 packages)"
-            exit 0
-          fi
-          grant check sbom:/tmp/sbom-agent.json -c .grant.yaml
+        run: grant check dir:services/agent -c .grant.yaml
 
       - name: Check API licenses
-        run: |
-          PACKAGES=$(jq '.packages | length' /tmp/sbom-api.json)
-          echo "API SBOM packages: $PACKAGES"
-          if [ "${PACKAGES:-0}" -eq 0 ]; then
-            echo "Skipping license check (0 packages)"
-            exit 0
-          fi
-          grant check sbom:/tmp/sbom-api.json -c .grant.yaml
+        run: grant check dir:services/api -c .grant.yaml
 
   # Optional: triggered by PR label or manual dispatch
   integration-tests:
