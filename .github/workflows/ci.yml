@@ -216,18 +216,20 @@ jobs:
 
       - name: Check Agent licenses
         run: |
-          PACKAGES=$(python3 -c "import json; d=json.load(open('/tmp/sbom-agent.json')); print(len(d.get('packages',[])))")
-          if [ "$PACKAGES" -eq 0 ]; then
-            echo "SBOM has 0 packages — skipping license check"
+          PACKAGES=$(jq '.packages | length' /tmp/sbom-agent.json)
+          echo "Agent SBOM packages: $PACKAGES"
+          if [ "${PACKAGES:-0}" -eq 0 ]; then
+            echo "Skipping license check (0 packages)"
             exit 0
           fi
           grant check sbom:/tmp/sbom-agent.json -c .grant.yaml
 
       - name: Check API licenses
         run: |
-          PACKAGES=$(python3 -c "import json; d=json.load(open('/tmp/sbom-api.json')); print(len(d.get('packages',[])))")
-          if [ "$PACKAGES" -eq 0 ]; then
-            echo "SBOM has 0 packages — skipping license check"
+          PACKAGES=$(jq '.packages | length' /tmp/sbom-api.json)
+          echo "API SBOM packages: $PACKAGES"
+          if [ "${PACKAGES:-0}" -eq 0 ]; then
+            echo "Skipping license check (0 packages)"
             exit 0
           fi
           grant check sbom:/tmp/sbom-api.json -c .grant.yaml

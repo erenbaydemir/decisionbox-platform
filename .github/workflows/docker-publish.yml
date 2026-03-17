@@ -231,9 +231,10 @@ jobs:
         if: matrix.changed == 'true' || github.ref_type == 'tag'
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/grant/main/install.sh | sh -s -- -b /usr/local/bin
-          PACKAGES=$(python3 -c "import json; d=json.load(open('sbom-${{ matrix.service }}.spdx.json')); print(len(d.get('packages',[])))")
-          if [ "$PACKAGES" -eq 0 ]; then
-            echo "SBOM has 0 packages (static Go binary in minimal Alpine image) — skipping license check"
+          PACKAGES=$(jq '.packages | length' sbom-${{ matrix.service }}.spdx.json)
+          echo "SBOM packages: $PACKAGES"
+          if [ "${PACKAGES:-0}" -eq 0 ]; then
+            echo "Skipping license check (0 packages)"
             exit 0
           fi
           grant check sbom:sbom-${{ matrix.service }}.spdx.json -c .grant.yaml
