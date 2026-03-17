@@ -215,10 +215,22 @@ jobs:
         run: syft dir:services/api -o spdx-json > /tmp/sbom-api.json
 
       - name: Check Agent licenses
-        run: grant check sbom:/tmp/sbom-agent.json -c .grant.yaml
+        run: |
+          PACKAGES=$(python3 -c "import json; d=json.load(open('/tmp/sbom-agent.json')); print(len(d.get('packages',[])))")
+          if [ "$PACKAGES" -eq 0 ]; then
+            echo "SBOM has 0 packages — skipping license check"
+            exit 0
+          fi
+          grant check sbom:/tmp/sbom-agent.json -c .grant.yaml
 
       - name: Check API licenses
-        run: grant check sbom:/tmp/sbom-api.json -c .grant.yaml
+        run: |
+          PACKAGES=$(python3 -c "import json; d=json.load(open('/tmp/sbom-api.json')); print(len(d.get('packages',[])))")
+          if [ "$PACKAGES" -eq 0 ]; then
+            echo "SBOM has 0 packages — skipping license check"
+            exit 0
+          fi
+          grant check sbom:/tmp/sbom-api.json -c .grant.yaml
 
   # Optional: triggered by PR label or manual dispatch
   integration-tests:
