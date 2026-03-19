@@ -228,13 +228,13 @@ jobs:
         if: matrix.changed == 'true' || github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/grant/main/install.sh | sh -s -- -b /usr/local/bin
-          PACKAGES=$(jq '.packages | length' sbom-${{ matrix.service }}.spdx.json)
-          echo "SBOM packages: $PACKAGES"
-          if [ "${PACKAGES:-0}" -eq 0 ]; then
-            echo "Skipping license check (0 packages)"
-            exit 0
-          fi
-          grant check sbom:sbom-${{ matrix.service }}.spdx.json -c .grant.yaml
+          SERVICE="${{ matrix.service }}"
+          case "$SERVICE" in
+            decisionbox-api)   DIR="services/api" ;;
+            decisionbox-agent) DIR="services/agent" ;;
+            *)                 echo "Skipping license check for $SERVICE (no Go source)"; exit 0 ;;
+          esac
+          grant check dir:$DIR -c .grant.yaml
 
   push:
     name: Push ${{ matrix.service }}
