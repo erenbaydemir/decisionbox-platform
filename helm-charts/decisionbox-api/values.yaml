@@ -102,6 +102,12 @@ service:
 
 ingress:
   enabled: false
+  ingressClassName: ""
+  annotations: {}
+  host: ""
+  tlsSecretName: ""
+  pathType: Prefix
+  path: /
 
 rbac:
   enabled: true
