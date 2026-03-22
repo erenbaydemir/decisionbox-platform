@@ -1,0 +1,25 @@
+codecov:
+  notify:
+    after_n_builds: 2
+
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+    patch:
+      default:
+        target: auto
+
+flags:
+  go:
+    paths:
+      - libs/
+      - services/
+      - providers/
+      - domain-packs/
+    carryforward: true
+  dashboard:
+    paths:
+      - ui/dashboard/
+    carryforward: true
