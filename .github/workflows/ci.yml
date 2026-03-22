@@ -76,22 +76,23 @@ jobs:
 
       - name: Test with coverage
         run: |
-          mkdir -p coverage
-          (cd libs/go-common && go test -coverprofile=../../coverage/go-common.out ./...)
-          (cd domain-packs/gaming/go && go test -coverprofile=../../../coverage/gaming.out ./...)
-          (cd domain-packs/social/go && go test -coverprofile=../../../coverage/social.out ./...)
-          (cd providers/llm/claude && go test -coverprofile=../../../../coverage/llm-claude.out ./...)
-          (cd providers/llm/openai && go test -coverprofile=../../../../coverage/llm-openai.out ./...)
-          (cd providers/llm/ollama && go test -coverprofile=../../../../coverage/llm-ollama.out ./...)
-          (cd providers/llm/vertex-ai && go test -coverprofile=../../../../coverage/llm-vertex.out ./...)
-          (cd providers/llm/bedrock && go test -coverprofile=../../../../coverage/llm-bedrock.out ./...)
-          (cd providers/secrets/mongodb && go test -coverprofile=../../../../coverage/secrets-mongodb.out ./...)
-          (cd providers/secrets/gcp && go test -coverprofile=../../../../coverage/secrets-gcp.out ./...)
-          (cd providers/secrets/aws && go test -coverprofile=../../../../coverage/secrets-aws.out ./...)
-          (cd providers/warehouse/bigquery && go test -coverprofile=../../../../coverage/warehouse-bigquery.out ./...)
-          (cd providers/warehouse/redshift && go test -coverprofile=../../../../coverage/warehouse-redshift.out ./...)
-          (cd services/agent && go test -coverprofile=../../coverage/agent.out ./...)
-          (cd services/api && go test -coverprofile=../../coverage/api.out ./...)
+          COV="${GITHUB_WORKSPACE}/coverage"
+          mkdir -p "$COV"
+          (cd libs/go-common && go test -coverprofile="$COV/go-common.out" ./...)
+          (cd domain-packs/gaming/go && go test -coverprofile="$COV/gaming.out" ./...)
+          (cd domain-packs/social/go && go test -coverprofile="$COV/social.out" ./...)
+          (cd providers/llm/claude && go test -coverprofile="$COV/llm-claude.out" ./...)
+          (cd providers/llm/openai && go test -coverprofile="$COV/llm-openai.out" ./...)
+          (cd providers/llm/ollama && go test -coverprofile="$COV/llm-ollama.out" ./...)
+          (cd providers/llm/vertex-ai && go test -coverprofile="$COV/llm-vertex.out" ./...)
+          (cd providers/llm/bedrock && go test -coverprofile="$COV/llm-bedrock.out" ./...)
+          (cd providers/secrets/mongodb && go test -coverprofile="$COV/secrets-mongodb.out" ./...)
+          (cd providers/secrets/gcp && go test -coverprofile="$COV/secrets-gcp.out" ./...)
+          (cd providers/secrets/aws && go test -coverprofile="$COV/secrets-aws.out" ./...)
+          (cd providers/warehouse/bigquery && go test -coverprofile="$COV/warehouse-bigquery.out" ./...)
+          (cd providers/warehouse/redshift && go test -coverprofile="$COV/warehouse-redshift.out" ./...)
+          (cd services/agent && go test -coverprofile="$COV/agent.out" ./...)
+          (cd services/api && go test -coverprofile="$COV/api.out" ./...)
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
