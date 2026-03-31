@@ -260,6 +260,73 @@ Row counts come from `pg_class.reltuples` — an estimate maintained by PostgreS
 PostgreSQL is self-hosted or managed (RDS, Cloud SQL, AlloyDB, Supabase).
 There is no per-query cost model, so the cost estimation feature is not available.
 
+## Databricks
+
+### Prerequisites
+
+- A Databricks workspace (AWS, Azure, or GCP)
+- A SQL warehouse (serverless or classic)
+- Unity Catalog enabled with access to the target catalog and schema
+
+### Dashboard Setup
+
+1. Select **Databricks** as warehouse provider
+2. Fill in:
+   - **Server Hostname**: Your workspace hostname (e.g., `xxx.cloud.databricks.com`)
+   - **HTTP Path**: SQL warehouse endpoint (e.g., `/sql/1.0/warehouses/xxx`)
+   - **Catalog**: Unity Catalog catalog name (e.g., `main`)
+3. Optionally set **Schema** (default: `default`)
+4. Enter **Datasets**: Schema names (e.g., `default`)
+
+### Authentication
+
+When creating a project, select one of the available auth methods:
+
+**Personal Access Token (PAT)** — Simplest setup.
+1. In Databricks, go to Settings > Developer > Access tokens
+2. Generate a new token
+3. In the project creation form, select **Personal Access Token** and paste the token
+
+**OAuth M2M (Service Principal)** — Recommended for production.
+1. Create a service principal in your Databricks workspace
+2. Create an OAuth secret for the service principal
+3. Grant the service principal access to your SQL warehouse and catalog
+4. In the project creation form, select **OAuth M2M** and enter `client_id:client_secret`
+
+### Unity Catalog Namespace
+
+Databricks uses a 3-level namespace: `catalog.schema.table`.
+The agent qualifies table references as `catalog.information_schema.tables` for metadata queries.
+SQL queries use the schema set in the project's datasets configuration.
+
+### Data Type Handling
+
+Databricks types are automatically normalized:
+- `TINYINT`, `SMALLINT`, `INT`, `BIGINT` → `INT64`
+- `FLOAT`, `DOUBLE` → `FLOAT64`
+- `DECIMAL(p,s)` → `FLOAT64` (parsed from driver's string representation)
+- `STRING`, `CHAR`, `VARCHAR` → `STRING`
+- `BOOLEAN` → `BOOL`
+- `DATE` → `DATE`
+- `TIMESTAMP`, `TIMESTAMP_NTZ` → `TIMESTAMP`
+- `BINARY` → `BYTES`
+- `STRUCT`, `ARRAY`, `MAP`, `VARIANT` → `RECORD` (JSON string in query results)
+- `INTERVAL` → `STRING`
+
+### SQL Dialect
+
+Databricks SQL extends ANSI SQL with:
+- **QUALIFY** — Filter window function results directly (like Snowflake)
+- **PIVOT / UNPIVOT** — Rotate rows to columns and vice versa
+- **explode / explode_outer** — Expand arrays and maps into rows
+- **Delta time travel** — `TIMESTAMP AS OF` and `VERSION AS OF`
+- **Java SimpleDateFormat** — Use `yyyy-MM-dd` (not `YYYY-MM-DD`)
+
+### Cost
+
+Databricks SQL warehouses charge per DBU (Databricks Unit) based on cluster size and runtime.
+There is no per-query cost estimation API, so the cost estimation feature is not available.
+
 ## Cross-Cloud Authentication
 
 DecisionBox supports accessing warehouses from a different cloud:
@@ -272,6 +339,7 @@ DecisionBox supports accessing warehouses from a different cloud:
 | Redshift cross-account | Assume Role | Enter Role ARN + External ID |
 | Snowflake from any cloud | Password or Key Pair | Paste password or PEM private key |
 | PostgreSQL from any cloud | Password or Connection String | Enter credentials or full DSN |
+| Databricks from any cloud | PAT or OAuth M2M | Paste token or client_id:client_secret |
 | Any from local dev | ADC / IAM Role | Configure cloud CLI (`gcloud auth`, `aws configure`) |
 
 The key concept: warehouse credentials are stored encrypted via the **secret provider**. When creating a project, select the appropriate auth method and enter credentials inline. The agent reads credentials from the secret provider before initializing the warehouse provider.

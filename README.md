@@ -31,13 +31,14 @@ DecisionBox is designed for product managers, analysts, and developers who want 
 ```
 Your Data Warehouse             DecisionBox Agent            Dashboard
 (BigQuery, Redshift,      →    (AI explores your data)  →   (Insights & Recommendations)
- Snowflake, PostgreSQL)
+ Snowflake, PostgreSQL,
+ Databricks)
                                  writes SQL, validates
                                  findings, generates
                                  actionable advice
 ```
 
-1. **Connect** your data warehouse (BigQuery, Redshift, Snowflake, PostgreSQL, and more)
+1. **Connect** your data warehouse (BigQuery, Redshift, Snowflake, PostgreSQL, Databricks, and more)
 2. **Configure** your project (domain, game profile, LLM provider)
 3. **Run discovery** — the AI agent autonomously explores your data
 4. **Review insights** — severity-ranked findings with confidence scores
@@ -48,7 +49,7 @@ Your Data Warehouse             DecisionBox Agent            Dashboard
 - **Autonomous data exploration** — AI writes and executes SQL queries, iterates based on results
 - **Domain-aware analysis** — Pluggable domain packs (gaming, social network shipped — bring your own)
 - **Multiple LLM providers** — Claude, OpenAI, Ollama, Vertex AI, Bedrock, Azure AI Foundry
-- **Multiple warehouses** — BigQuery, Amazon Redshift (serverless + provisioned), Snowflake, PostgreSQL
+- **Multiple warehouses** — BigQuery, Amazon Redshift (serverless + provisioned), Snowflake, PostgreSQL, Databricks
 - **Per-project secrets** — API keys encrypted per-project (MongoDB, GCP Secret Manager, AWS Secrets Manager, Azure Key Vault)
 - **Insight validation** — AI claims are verified against your actual data
 - **Feedback loop** — Like/dislike insights, agent learns from feedback on next run
@@ -92,7 +93,7 @@ open http://localhost:3000
 ```
 
 The dashboard will guide you through creating your first project. You'll need:
-- A data warehouse connection (BigQuery project ID, Redshift workgroup, or Snowflake account)
+- A data warehouse connection (BigQuery project ID, Redshift workgroup, Snowflake account, or Databricks workspace)
 - An LLM API key (Anthropic, OpenAI, or configure Vertex AI / Bedrock)
 
 For detailed setup instructions, see the [Installation Guide](https://decisionbox.io/docs/getting-started/installation).
