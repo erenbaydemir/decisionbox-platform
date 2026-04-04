@@ -47,11 +47,38 @@ type PricingRepo interface {
 	Save(ctx context.Context, pricing *models.Pricing) error
 }
 
+// InsightRepo abstracts insight operations for handler unit testing.
+type InsightRepo interface {
+	Create(ctx context.Context, insight *models.StandaloneInsight) error
+	CreateMany(ctx context.Context, insights []*models.StandaloneInsight) error
+	GetByID(ctx context.Context, id string) (*models.StandaloneInsight, error)
+	ListByProject(ctx context.Context, projectID string, limit, offset int) ([]*models.StandaloneInsight, error)
+	ListByDiscovery(ctx context.Context, discoveryID string) ([]*models.StandaloneInsight, error)
+	CountByProject(ctx context.Context, projectID string) (int64, error)
+	UpdateEmbedding(ctx context.Context, id string, embeddingText, embeddingModel string) error
+	UpdateDuplicate(ctx context.Context, id string, duplicateOf string, score float64) error
+	GetLatestEmbeddingModel(ctx context.Context, projectID string) (string, error)
+}
+
+// RecommendationRepo abstracts recommendation operations for handler unit testing.
+type RecommendationRepo interface {
+	Create(ctx context.Context, rec *models.StandaloneRecommendation) error
+	CreateMany(ctx context.Context, recs []*models.StandaloneRecommendation) error
+	GetByID(ctx context.Context, id string) (*models.StandaloneRecommendation, error)
+	ListByProject(ctx context.Context, projectID string, limit, offset int) ([]*models.StandaloneRecommendation, error)
+	ListByDiscovery(ctx context.Context, discoveryID string) ([]*models.StandaloneRecommendation, error)
+	CountByProject(ctx context.Context, projectID string) (int64, error)
+	UpdateEmbedding(ctx context.Context, id string, embeddingText, embeddingModel string) error
+	UpdateDuplicate(ctx context.Context, id string, duplicateOf string, score float64) error
+}
+
 // Compile-time checks: concrete repos satisfy interfaces.
 var (
-	_ ProjectRepo   = (*ProjectRepository)(nil)
-	_ DiscoveryRepo = (*DiscoveryRepository)(nil)
-	_ RunRepo       = (*RunRepository)(nil)
-	_ FeedbackRepo  = (*FeedbackRepository)(nil)
-	_ PricingRepo   = (*PricingRepository)(nil)
+	_ ProjectRepo        = (*ProjectRepository)(nil)
+	_ DiscoveryRepo      = (*DiscoveryRepository)(nil)
+	_ RunRepo            = (*RunRepository)(nil)
+	_ FeedbackRepo       = (*FeedbackRepository)(nil)
+	_ PricingRepo        = (*PricingRepository)(nil)
+	_ InsightRepo        = (*InsightRepository)(nil)
+	_ RecommendationRepo = (*RecommendationRepository)(nil)
 )

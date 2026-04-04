@@ -71,6 +71,25 @@ var schema = []struct {
 		},
 	},
 	{
+		Name: "insights",
+		Indexes: []mongo.IndexModel{
+			{Keys: bson.D{{Key: "project_id", Value: 1}, {Key: "created_at", Value: -1}}},
+			{Keys: bson.D{{Key: "project_id", Value: 1}, {Key: "analysis_area", Value: 1}}},
+			{Keys: bson.D{{Key: "project_id", Value: 1}, {Key: "severity", Value: 1}}},
+			{Keys: bson.D{{Key: "discovery_id", Value: 1}}},
+			{Keys: bson.D{{Key: "embedding_model", Value: 1}}},
+		},
+	},
+	{
+		Name: "recommendations",
+		Indexes: []mongo.IndexModel{
+			{Keys: bson.D{{Key: "project_id", Value: 1}, {Key: "created_at", Value: -1}}},
+			{Keys: bson.D{{Key: "project_id", Value: 1}, {Key: "recommendation_category", Value: 1}}},
+			{Keys: bson.D{{Key: "discovery_id", Value: 1}}},
+			{Keys: bson.D{{Key: "embedding_model", Value: 1}}},
+		},
+	},
+	{
 		Name: "discovery_debug_logs",
 		Indexes: []mongo.IndexModel{
 			{Keys: bson.D{{Key: "project_id", Value: 1}, {Key: "timestamp", Value: -1}}},

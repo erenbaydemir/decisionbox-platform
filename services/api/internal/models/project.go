@@ -11,6 +11,7 @@ type Project struct {
 
 	Warehouse WarehouseConfig `bson:"warehouse" json:"warehouse"`
 	LLM       LLMConfig       `bson:"llm" json:"llm"`
+	Embedding EmbeddingConfig `bson:"embedding,omitempty" json:"embedding,omitempty"`
 	Schedule  ScheduleConfig  `bson:"schedule" json:"schedule"`
 
 	Profile map[string]interface{} `bson:"profile,omitempty" json:"profile,omitempty"`
@@ -56,6 +57,11 @@ type LLMConfig struct {
 	Provider string            `bson:"provider" json:"provider"`
 	Model    string            `bson:"model" json:"model"`
 	Config   map[string]string `bson:"config,omitempty" json:"config,omitempty"` // provider-specific: project_id, location, host, etc.
+}
+
+type EmbeddingConfig struct {
+	Provider string `bson:"provider,omitempty" json:"provider,omitempty"`
+	Model    string `bson:"model,omitempty" json:"model,omitempty"`
 }
 
 type ScheduleConfig struct {
