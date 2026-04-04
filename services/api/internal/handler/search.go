@@ -2,14 +2,18 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	goembedding "github.com/decisionbox-io/decisionbox/libs/go-common/embedding"
+	gollm "github.com/decisionbox-io/decisionbox/libs/go-common/llm"
 	commonmodels "github.com/decisionbox-io/decisionbox/libs/go-common/models"
 	gosecrets "github.com/decisionbox-io/decisionbox/libs/go-common/secrets"
 	"github.com/decisionbox-io/decisionbox/libs/go-common/vectorstore"
 	"github.com/decisionbox-io/decisionbox/services/api/internal/database"
+	"github.com/decisionbox-io/decisionbox/services/api/internal/models"
 	"github.com/google/uuid"
 )
 
@@ -238,4 +242,309 @@ func (h *SearchHandler) saveSearchHistory(ctx context.Context, projectID string,
 	}
 
 	h.historyRepo.Save(ctx, entry)
+}
+
+// crossSearchRequest is the request body for cross-project search.
+type crossSearchRequest struct {
+	Query          string   `json:"query"`
+	EmbeddingModel string   `json:"embedding_model"`
+	Types          []string `json:"types,omitempty"`
+	Limit          int      `json:"limit,omitempty"`
+	MinScore       float64  `json:"min_score,omitempty"`
+}
+
+type crossSearchResponse struct {
+	Results          []searchResultItem `json:"results"`
+	ProjectsSearched int                `json:"projects_searched"`
+	ProjectsExcluded int                `json:"projects_excluded"`
+	ExcludedReason   string             `json:"excluded_reason,omitempty"`
+}
+
+// CrossProjectSearch performs search across all projects using the same embedding model.
+// POST /api/v1/search
+func (h *SearchHandler) CrossProjectSearch(w http.ResponseWriter, r *http.Request) {
+	if h.vectorStore == nil {
+		writeError(w, http.StatusServiceUnavailable, "vector search is not configured")
+		return
+	}
+
+	var req crossSearchRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Query == "" {
+		writeError(w, http.StatusBadRequest, "query is required")
+		return
+	}
+	if req.EmbeddingModel == "" {
+		writeError(w, http.StatusBadRequest, "embedding_model is required for cross-project search")
+		return
+	}
+	if req.Limit <= 0 {
+		req.Limit = 20
+	}
+
+	ctx := r.Context()
+
+	// List all projects
+	allProjects, err := h.projectRepo.List(ctx, 1000, 0)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list projects")
+		return
+	}
+
+	// Filter projects by embedding model
+	var matchingIDs []string
+	excluded := 0
+	for _, p := range allProjects {
+		if p.Embedding.Model == req.EmbeddingModel {
+			matchingIDs = append(matchingIDs, p.ID)
+		} else if p.Embedding.Provider != "" {
+			excluded++
+		}
+	}
+
+	if len(matchingIDs) == 0 {
+		writeJSON(w, http.StatusOK, crossSearchResponse{
+			Results:          []searchResultItem{},
+			ProjectsExcluded: excluded,
+			ExcludedReason:   "different embedding model",
+		})
+		return
+	}
+
+	// Use the first matching project's API key to embed the query
+	firstProject := matchingIDs[0]
+	embProvider, err := h.createEmbeddingProvider(ctx, "", req.EmbeddingModel, firstProject)
+	if err != nil {
+		// Try to find a project that actually has the right provider
+		for _, p := range allProjects {
+			if p.Embedding.Model == req.EmbeddingModel && p.Embedding.Provider != "" {
+				embProvider, err = h.createEmbeddingProvider(ctx, p.Embedding.Provider, req.EmbeddingModel, p.ID)
+				if err == nil {
+					break
+				}
+			}
+		}
+		if embProvider == nil {
+			writeError(w, http.StatusInternalServerError, "failed to create embedding provider")
+			return
+		}
+	}
+
+	vectors, err := embProvider.Embed(ctx, []string{req.Query})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to embed query")
+		return
+	}
+
+	results, err := h.vectorStore.Search(ctx, vectors[0], vectorstore.SearchOpts{
+		ProjectIDs:     matchingIDs,
+		Types:          req.Types,
+		EmbeddingModel: req.EmbeddingModel,
+		Limit:          req.Limit,
+		MinScore:       req.MinScore,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "search failed")
+		return
+	}
+
+	items := h.enrichResults(ctx, results)
+
+	// Enrich with project names
+	projectNames := make(map[string]string)
+	for _, p := range allProjects {
+		projectNames[p.ID] = p.Name
+	}
+	for i := range items {
+		items[i].ProjectName = projectNames[items[i].ProjectID]
+	}
+
+	writeJSON(w, http.StatusOK, crossSearchResponse{
+		Results:          items,
+		ProjectsSearched: len(matchingIDs),
+		ProjectsExcluded: excluded,
+		ExcludedReason:   "different embedding model",
+	})
+}
+
+// askRequest is the request body for RAG Q&A.
+type askRequest struct {
+	Question string `json:"question"`
+	Limit    int    `json:"limit,omitempty"`
+}
+
+type askResponse struct {
+	Answer  string             `json:"answer"`
+	Sources []searchResultItem `json:"sources"`
+	Model   string             `json:"model"`
+}
+
+// Ask performs RAG Q&A: search + LLM synthesis.
+// POST /api/v1/projects/{id}/ask
+func (h *SearchHandler) Ask(w http.ResponseWriter, r *http.Request) {
+	projectID := r.PathValue("id")
+	if projectID == "" {
+		writeError(w, http.StatusBadRequest, "project ID is required")
+		return
+	}
+
+	if h.vectorStore == nil {
+		writeError(w, http.StatusServiceUnavailable, "vector search is not configured")
+		return
+	}
+
+	var req askRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Question == "" {
+		writeError(w, http.StatusBadRequest, "question is required")
+		return
+	}
+	if req.Limit <= 0 {
+		req.Limit = 5
+	}
+
+	ctx := r.Context()
+
+	project, err := h.projectRepo.GetByID(ctx, projectID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	if project.Embedding.Provider == "" {
+		writeError(w, http.StatusBadRequest, "embedding provider not configured")
+		return
+	}
+
+	// Embed the question
+	embProvider, err := h.createEmbeddingProvider(ctx, project.Embedding.Provider, project.Embedding.Model, projectID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create embedding provider")
+		return
+	}
+
+	vectors, err := embProvider.Embed(ctx, []string{req.Question})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to embed question")
+		return
+	}
+
+	// Search for relevant context
+	searchResults, err := h.vectorStore.Search(ctx, vectors[0], vectorstore.SearchOpts{
+		ProjectIDs:     []string{projectID},
+		EmbeddingModel: embProvider.ModelName(),
+		Limit:          req.Limit,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "context search failed")
+		return
+	}
+
+	sources := h.enrichResults(ctx, searchResults)
+
+	if len(sources) == 0 {
+		writeJSON(w, http.StatusOK, askResponse{
+			Answer:  "No relevant insights found for this question. Try running a discovery first or rephrasing your question.",
+			Sources: []searchResultItem{},
+			Model:   project.LLM.Model,
+		})
+		return
+	}
+
+	// Build context from sources for LLM
+	var contextParts []string
+	for i, s := range sources {
+		contextParts = append(contextParts, fmt.Sprintf("[%d] %s: %s (score: %.2f)", i+1, s.Name, s.Description, s.Score))
+	}
+	contextStr := strings.Join(contextParts, "\n")
+
+	// Call LLM to synthesize answer
+	llmProvider, err := h.createLLMProvider(ctx, project, projectID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create LLM provider")
+		return
+	}
+
+	systemPrompt := "You are a data analyst assistant for DecisionBox. Answer questions based on the provided insights and recommendations from previous discovery runs. Always cite your sources by number (e.g., [1], [2]). If the provided context doesn't contain enough information, say so."
+
+	prompt := fmt.Sprintf("Context from %d relevant insights/recommendations:\n\n%s\n\nQuestion: %s", len(sources), contextStr, req.Question)
+
+	chatResp, err := llmProvider.Chat(ctx, gollm.ChatRequest{
+		Model:        project.LLM.Model,
+		SystemPrompt: systemPrompt,
+		Messages:     []gollm.Message{{Role: "user", Content: prompt}},
+		MaxTokens:    2048,
+		Temperature:  0.3,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "LLM synthesis failed")
+		return
+	}
+
+	// Save ask history
+	go h.saveAskHistory(context.Background(), projectID, req.Question, chatResp.Content, sources, project.LLM.Model, chatResp.Usage.InputTokens+chatResp.Usage.OutputTokens)
+
+	writeJSON(w, http.StatusOK, askResponse{
+		Answer:  chatResp.Content,
+		Sources: sources,
+		Model:   chatResp.Model,
+	})
+}
+
+// createLLMProvider creates an LLM provider for a project's RAG answer synthesis.
+func (h *SearchHandler) createLLMProvider(ctx context.Context, project *models.Project, projectID string) (gollm.Provider, error) {
+	apiKey := ""
+	if h.secretProvider != nil {
+		key, err := h.secretProvider.Get(ctx, projectID, "llm-api-key")
+		if err == nil {
+			apiKey = key
+		}
+	}
+
+	cfg := gollm.ProviderConfig{
+		"api_key": apiKey,
+		"model":   project.LLM.Model,
+	}
+	for k, v := range project.LLM.Config {
+		cfg[k] = v
+	}
+
+	return gollm.NewProvider(project.LLM.Provider, cfg)
+}
+
+// saveAskHistory records the ask query for analytics.
+func (h *SearchHandler) saveAskHistory(ctx context.Context, projectID, question, answer string, sources []searchResultItem, model string, tokens int) {
+	sourceIDs := make([]string, 0, len(sources))
+	for _, s := range sources {
+		sourceIDs = append(sourceIDs, s.ID)
+	}
+
+	entry := &commonmodels.SearchHistory{
+		ID:            uuid.New().String(),
+		UserID:        "anonymous",
+		ProjectID:     projectID,
+		Query:         question,
+		Type:          "ask",
+		ResultsCount:  len(sources),
+		AnswerSummary: truncate(answer, 500),
+		SourceIDs:     sourceIDs,
+		LLMModel:      model,
+		TokensUsed:    tokens,
+		CreatedAt:     time.Now(),
+	}
+
+	h.historyRepo.Save(ctx, entry)
+}
+
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }

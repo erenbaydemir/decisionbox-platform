@@ -131,6 +131,8 @@ func New(db *database.DB, healthHandler *health.Handler, secretProvider secrets.
 
 	// Search — viewer
 	mux.HandleFunc("POST /api/v1/projects/{id}/search", withRole(viewer, search.Search))
+	mux.HandleFunc("POST /api/v1/search", withRole(viewer, search.CrossProjectSearch))
+	mux.HandleFunc("POST /api/v1/projects/{id}/ask", withRole(viewer, search.Ask))
 
 	// Insights & Recommendations — viewer
 	mux.HandleFunc("GET /api/v1/projects/{id}/insights", withRole(viewer, insights.List))
