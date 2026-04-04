@@ -25,6 +25,7 @@ export default function SpotlightSearch() {
   const [loading, setLoading] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState(-1);
   const [isMac, setIsMac] = useState(false);
+  const [mode, setMode] = useState<'search' | 'ask'>('search');
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -109,8 +110,17 @@ export default function SpotlightSearch() {
       if (selectedIdx >= 0 && allItems[selectedIdx]) {
         allItems[selectedIdx].action();
       } else if (query.trim() && projectId) {
-        goToSearch(query.trim());
+        if (mode === 'ask') {
+          setOpen(false);
+          router.push(`/projects/${projectId}/ask?q=${encodeURIComponent(query.trim())}`);
+          setQuery('');
+        } else {
+          goToSearch(query.trim());
+        }
       }
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      setMode(m => m === 'search' ? 'ask' : 'search');
     }
   };
 
@@ -143,14 +153,20 @@ export default function SpotlightSearch() {
         boxShadow: open ? '0 0 0 3px rgba(24,95,165,0.08)' : 'none',
         transition: 'all 150ms ease',
       }}>
-        <IconSearch size={15} color={open ? 'var(--db-blue-text)' : 'var(--db-text-tertiary)'} style={{ flexShrink: 0 }} />
+        {mode === 'search'
+          ? <IconSearch size={15} color={open ? 'var(--db-blue-text)' : 'var(--db-text-tertiary)'} style={{ flexShrink: 0 }} />
+          : <IconMessageCircle size={15} color={open ? 'var(--db-purple-text)' : 'var(--db-text-tertiary)'} style={{ flexShrink: 0 }} />
+        }
         <input
           ref={inputRef}
           value={query}
           onChange={e => { setQuery(e.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}
           onKeyDown={handleKeyDown}
-          placeholder={projectId ? 'Search insights, ask questions...' : 'Select a project first'}
+          placeholder={projectId
+            ? (mode === 'search' ? 'Search insights...' : 'Ask a question...')
+            : 'Select a project first'
+          }
           disabled={!projectId}
           style={{
             flex: 1, border: 'none', background: 'transparent', outline: 'none',
@@ -164,6 +180,22 @@ export default function SpotlightSearch() {
             animation: 'spin 600ms linear infinite', flexShrink: 0,
           }} />
         )}
+        {/* Mode toggle */}
+        <button
+          onClick={() => setMode(m => m === 'search' ? 'ask' : 'search')}
+          title={`Switch to ${mode === 'search' ? 'Ask' : 'Search'} mode (Tab)`}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 3,
+            fontSize: 10, fontWeight: 600, flexShrink: 0,
+            background: mode === 'ask' ? 'var(--db-purple-bg)' : 'var(--db-blue-bg)',
+            color: mode === 'ask' ? 'var(--db-purple-text)' : 'var(--db-blue-text)',
+            border: 'none', borderRadius: 4, padding: '2px 6px',
+            cursor: 'pointer', fontFamily: 'inherit', lineHeight: '16px',
+            transition: 'all 120ms ease',
+          }}
+        >
+          {mode === 'search' ? 'Search' : 'Ask'}
+        </button>
         <kbd style={{
           fontSize: 10, color: 'var(--db-text-tertiary)',
           background: 'var(--db-bg-muted)', border: '1px solid var(--db-border-default)',

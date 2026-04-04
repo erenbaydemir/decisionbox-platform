@@ -404,6 +404,7 @@ export interface AskSession {
   user_id: string;
   title: string;
   messages: AskSessionMessage[];
+  message_count: number;
   created_at: string;
   updated_at: string;
 }

@@ -20,6 +20,7 @@ func NewAskSessionRepository(db *DB) *AskSessionRepository {
 }
 
 func (r *AskSessionRepository) Create(ctx context.Context, session *commonmodels.AskSession) error {
+	session.MessageCount = len(session.Messages)
 	session.CreatedAt = time.Now()
 	session.UpdatedAt = time.Now()
 	_, err := r.db.Collection("ask_sessions").InsertOne(ctx, session)
@@ -34,6 +35,7 @@ func (r *AskSessionRepository) AppendMessage(ctx context.Context, sessionID stri
 		bson.M{"_id": sessionID},
 		bson.M{
 			"$push": bson.M{"messages": msg},
+			"$inc":  bson.M{"message_count": 1},
 			"$set":  bson.M{"updated_at": time.Now()},
 		},
 	)
@@ -60,14 +62,13 @@ func (r *AskSessionRepository) ListByProject(ctx context.Context, projectID stri
 		SetSort(bson.D{{Key: "updated_at", Value: -1}}).
 		SetLimit(int64(limit)).
 		SetProjection(bson.M{
-			"_id":        1,
-			"project_id": 1,
-			"user_id":    1,
-			"title":      1,
-			"created_at": 1,
-			"updated_at": 1,
-			// Include only the count of messages, not full content
-			"messages": bson.M{"$slice": 0},
+			"_id":           1,
+			"project_id":    1,
+			"user_id":       1,
+			"title":         1,
+			"message_count": 1,
+			"created_at":    1,
+			"updated_at":    1,
 		})
 
 	cursor, err := r.db.Collection("ask_sessions").Find(ctx, bson.M{"project_id": projectID}, opts)

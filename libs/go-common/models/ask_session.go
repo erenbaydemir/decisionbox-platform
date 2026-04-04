@@ -9,9 +9,10 @@ type AskSession struct {
 	ProjectID string              `bson:"project_id" json:"project_id"`
 	UserID    string              `bson:"user_id" json:"user_id"`
 	Title     string              `bson:"title" json:"title"` // first question, used as display title
-	Messages  []AskSessionMessage `bson:"messages" json:"messages"`
-	CreatedAt time.Time           `bson:"created_at" json:"created_at"`
-	UpdatedAt time.Time           `bson:"updated_at" json:"updated_at"`
+	Messages     []AskSessionMessage `bson:"messages" json:"messages"`
+	MessageCount int                 `bson:"message_count" json:"message_count"`
+	CreatedAt    time.Time           `bson:"created_at" json:"created_at"`
+	UpdatedAt    time.Time           `bson:"updated_at" json:"updated_at"`
 }
 
 // AskSessionMessage is a single Q&A turn within a conversation.

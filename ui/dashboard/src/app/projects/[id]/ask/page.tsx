@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { Loader, TextInput, ActionIcon } from '@mantine/core';
 import { IconMessageCircle, IconSend, IconBulb, IconStarFilled, IconHistory, IconClock, IconPlus, IconTrash } from '@tabler/icons-react';
 import Link from 'next/link';
@@ -20,6 +20,8 @@ interface DisplayMessage {
 
 export default function AskPage() {
   const { id } = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
+  const initialQuestion = searchParams.get('q') || '';
   const [project, setProject] = useState<{ name: string } | null>(null);
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
@@ -32,6 +34,7 @@ export default function AskPage() {
   useEffect(() => {
     api.getProject(id).then(p => setProject({ name: p.name })).catch(() => {});
     loadSessions();
+    if (initialQuestion) handleAsk(initialQuestion);
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadSessions = () => {
@@ -321,7 +324,7 @@ export default function AskPage() {
                       <IconClock size={10} />
                       {formatRelativeTime(s.updated_at || s.created_at)}
                       <span>·</span>
-                      {s.messages?.length || 0} msg{(s.messages?.length || 0) !== 1 ? 's' : ''}
+                      {s.message_count || 0} msg{(s.message_count || 0) !== 1 ? 's' : ''}
                     </div>
                   </div>
                   <ActionIcon
