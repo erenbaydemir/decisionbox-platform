@@ -2,6 +2,14 @@ package embedding
 
 import "context"
 
+// ProjectConfig holds per-project embedding configuration.
+// Stored in the project document in MongoDB.
+// Shared between API and Agent services.
+type ProjectConfig struct {
+	Provider string `bson:"provider,omitempty" json:"provider,omitempty"`
+	Model    string `bson:"model,omitempty" json:"model,omitempty"`
+}
+
 // Provider abstracts text embedding operations.
 // Implement this interface to add support for a new embedding provider
 // (e.g., OpenAI, Ollama, Vertex AI, Bedrock).

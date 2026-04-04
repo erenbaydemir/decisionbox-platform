@@ -8,6 +8,8 @@ import (
 // StandaloneRecommendation is a denormalized recommendation document stored in the "recommendations" collection.
 // Each recommendation has a UUID _id shared with its Qdrant vector point.
 // The source discovery is linked via DiscoveryID.
+//
+// Shared between API (reads) and Agent (writes during Phase 9).
 type StandaloneRecommendation struct {
 	ID          string `bson:"_id" json:"id"`
 	ProjectID   string `bson:"project_id" json:"project_id"`
@@ -15,16 +17,16 @@ type StandaloneRecommendation struct {
 	Domain      string `bson:"domain" json:"domain"`
 	Category    string `bson:"category" json:"category"`
 
-	RecommendationCategory string   `bson:"recommendation_category" json:"recommendation_category"`
-	Title                  string   `bson:"title" json:"title"`
-	Description            string   `bson:"description" json:"description"`
-	Priority               int      `bson:"priority" json:"priority"`
-	TargetSegment          string   `bson:"target_segment" json:"target_segment"`
-	SegmentSize            int      `bson:"segment_size" json:"segment_size"`
-	ExpectedImpact         Impact   `bson:"expected_impact" json:"expected_impact"`
-	Actions                []string `bson:"actions" json:"actions"`
-	RelatedInsightIDs      []string `bson:"related_insight_ids,omitempty" json:"related_insight_ids,omitempty"`
-	Confidence             float64  `bson:"confidence" json:"confidence"`
+	RecommendationCategory string          `bson:"recommendation_category" json:"recommendation_category"`
+	Title                  string          `bson:"title" json:"title"`
+	Description            string          `bson:"description" json:"description"`
+	Priority               int             `bson:"priority" json:"priority"`
+	TargetSegment          string          `bson:"target_segment" json:"target_segment"`
+	SegmentSize            int             `bson:"segment_size" json:"segment_size"`
+	ExpectedImpact         ExpectedImpact  `bson:"expected_impact" json:"expected_impact"`
+	Actions                []string        `bson:"actions" json:"actions"`
+	RelatedInsightIDs      []string        `bson:"related_insight_ids,omitempty" json:"related_insight_ids,omitempty"`
+	Confidence             float64         `bson:"confidence" json:"confidence"`
 
 	// Embedding fields
 	EmbeddingText  string `bson:"embedding_text,omitempty" json:"embedding_text,omitempty"`
@@ -35,6 +37,14 @@ type StandaloneRecommendation struct {
 	SimilarityScore float64 `bson:"similarity_score,omitempty" json:"similarity_score,omitempty"`
 
 	CreatedAt time.Time `bson:"created_at" json:"created_at"`
+}
+
+// ExpectedImpact describes the expected outcome of a recommendation.
+type ExpectedImpact struct {
+	Metric               string `bson:"metric" json:"metric"`
+	EstimatedImprovement string `bson:"estimated_improvement" json:"estimated_improvement"`
+	Direction            string `bson:"direction,omitempty" json:"direction,omitempty"`
+	Reasoning            string `bson:"reasoning,omitempty" json:"reasoning,omitempty"`
 }
 
 // BuildEmbeddingText returns the text to embed for semantic search.

@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/decisionbox-io/decisionbox/libs/go-common/domainpack"
+	goembedding "github.com/decisionbox-io/decisionbox/libs/go-common/embedding"
 	gollm "github.com/decisionbox-io/decisionbox/libs/go-common/llm"
+	"github.com/decisionbox-io/decisionbox/libs/go-common/vectorstore"
 	gowarehouse "github.com/decisionbox-io/decisionbox/libs/go-common/warehouse"
 	"github.com/decisionbox-io/decisionbox/services/agent/internal/ai"
 	"github.com/decisionbox-io/decisionbox/services/agent/internal/database"
@@ -48,6 +50,9 @@ type Orchestrator struct {
 	filterValue    string
 	llmProvider    string
 	llmModel       string
+
+	vectorStore       vectorstore.Provider
+	embeddingProvider goembedding.Provider
 }
 
 // OrchestratorOptions configures the orchestrator.
@@ -75,6 +80,10 @@ type OrchestratorOptions struct {
 	LLMProvider     string
 	LLMModel        string
 	EnableDebugLogs bool
+
+	// Optional — nil if Qdrant/embedding not configured
+	VectorStore       vectorstore.Provider
+	EmbeddingProvider goembedding.Provider
 }
 
 // NewOrchestrator creates a new discovery orchestrator.
@@ -134,6 +143,8 @@ func NewOrchestrator(opts OrchestratorOptions) *Orchestrator {
 		filterValue:        opts.FilterValue,
 		llmProvider:        opts.LLMProvider,
 		llmModel:           opts.LLMModel,
+		vectorStore:        opts.VectorStore,
+		embeddingProvider:  opts.EmbeddingProvider,
 	}
 }
 

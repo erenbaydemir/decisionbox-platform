@@ -11,7 +11,7 @@ func TestStandaloneRecommendationBuildEmbeddingText(t *testing.T) {
 	rec := &StandaloneRecommendation{
 		Title:       "Add retry mechanics at Level 45",
 		Description: "Implement a lives/retry system to reduce churn",
-		ExpectedImpact: Impact{
+		ExpectedImpact: ExpectedImpact{
 			Metric:               "D7 retention",
 			EstimatedImprovement: "15-20%",
 		},
@@ -46,7 +46,7 @@ func TestStandaloneRecommendationJSONRoundTrip(t *testing.T) {
 		Priority:               1,
 		TargetSegment:          "players at level 45",
 		SegmentSize:            12450,
-		ExpectedImpact: Impact{
+		ExpectedImpact: ExpectedImpact{
 			Metric:               "D7 retention",
 			EstimatedImprovement: "15-20%",
 		},

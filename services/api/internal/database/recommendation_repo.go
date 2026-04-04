@@ -7,7 +7,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
-	"github.com/decisionbox-io/decisionbox/services/api/internal/models"
+	commonmodels "github.com/decisionbox-io/decisionbox/libs/go-common/models"
 )
 
 // RecommendationRepository handles CRUD for the denormalized "recommendations" collection.
@@ -19,7 +19,7 @@ func NewRecommendationRepository(db *DB) *RecommendationRepository {
 	return &RecommendationRepository{db: db}
 }
 
-func (r *RecommendationRepository) Create(ctx context.Context, rec *models.StandaloneRecommendation) error {
+func (r *RecommendationRepository) Create(ctx context.Context, rec *commonmodels.StandaloneRecommendation) error {
 	_, err := r.db.Collection("recommendations").InsertOne(ctx, rec)
 	if err != nil {
 		return fmt.Errorf("insert recommendation: %w", err)
@@ -27,7 +27,7 @@ func (r *RecommendationRepository) Create(ctx context.Context, rec *models.Stand
 	return nil
 }
 
-func (r *RecommendationRepository) CreateMany(ctx context.Context, recs []*models.StandaloneRecommendation) error {
+func (r *RecommendationRepository) CreateMany(ctx context.Context, recs []*commonmodels.StandaloneRecommendation) error {
 	if len(recs) == 0 {
 		return nil
 	}
@@ -42,8 +42,8 @@ func (r *RecommendationRepository) CreateMany(ctx context.Context, recs []*model
 	return nil
 }
 
-func (r *RecommendationRepository) GetByID(ctx context.Context, id string) (*models.StandaloneRecommendation, error) {
-	var rec models.StandaloneRecommendation
+func (r *RecommendationRepository) GetByID(ctx context.Context, id string) (*commonmodels.StandaloneRecommendation, error) {
+	var rec commonmodels.StandaloneRecommendation
 	err := r.db.Collection("recommendations").FindOne(ctx, bson.M{"_id": id}).Decode(&rec)
 	if err != nil {
 		return nil, fmt.Errorf("get recommendation %s: %w", id, err)
@@ -51,7 +51,7 @@ func (r *RecommendationRepository) GetByID(ctx context.Context, id string) (*mod
 	return &rec, nil
 }
 
-func (r *RecommendationRepository) ListByProject(ctx context.Context, projectID string, limit, offset int) ([]*models.StandaloneRecommendation, error) {
+func (r *RecommendationRepository) ListByProject(ctx context.Context, projectID string, limit, offset int) ([]*commonmodels.StandaloneRecommendation, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -66,14 +66,14 @@ func (r *RecommendationRepository) ListByProject(ctx context.Context, projectID 
 	}
 	defer cursor.Close(ctx)
 
-	var results []*models.StandaloneRecommendation
+	var results []*commonmodels.StandaloneRecommendation
 	if err := cursor.All(ctx, &results); err != nil {
 		return nil, fmt.Errorf("decode recommendations: %w", err)
 	}
 	return results, nil
 }
 
-func (r *RecommendationRepository) ListByDiscovery(ctx context.Context, discoveryID string) ([]*models.StandaloneRecommendation, error) {
+func (r *RecommendationRepository) ListByDiscovery(ctx context.Context, discoveryID string) ([]*commonmodels.StandaloneRecommendation, error) {
 	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}})
 	cursor, err := r.db.Collection("recommendations").Find(ctx, bson.M{"discovery_id": discoveryID}, opts)
 	if err != nil {
@@ -81,7 +81,7 @@ func (r *RecommendationRepository) ListByDiscovery(ctx context.Context, discover
 	}
 	defer cursor.Close(ctx)
 
-	var results []*models.StandaloneRecommendation
+	var results []*commonmodels.StandaloneRecommendation
 	if err := cursor.All(ctx, &results); err != nil {
 		return nil, fmt.Errorf("decode recommendations: %w", err)
 	}

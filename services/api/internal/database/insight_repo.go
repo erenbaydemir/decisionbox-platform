@@ -7,7 +7,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
-	"github.com/decisionbox-io/decisionbox/services/api/internal/models"
+	commonmodels "github.com/decisionbox-io/decisionbox/libs/go-common/models"
 )
 
 // InsightRepository handles CRUD for the denormalized "insights" collection.
@@ -19,7 +19,7 @@ func NewInsightRepository(db *DB) *InsightRepository {
 	return &InsightRepository{db: db}
 }
 
-func (r *InsightRepository) Create(ctx context.Context, insight *models.StandaloneInsight) error {
+func (r *InsightRepository) Create(ctx context.Context, insight *commonmodels.StandaloneInsight) error {
 	_, err := r.db.Collection("insights").InsertOne(ctx, insight)
 	if err != nil {
 		return fmt.Errorf("insert insight: %w", err)
@@ -27,7 +27,7 @@ func (r *InsightRepository) Create(ctx context.Context, insight *models.Standalo
 	return nil
 }
 
-func (r *InsightRepository) CreateMany(ctx context.Context, insights []*models.StandaloneInsight) error {
+func (r *InsightRepository) CreateMany(ctx context.Context, insights []*commonmodels.StandaloneInsight) error {
 	if len(insights) == 0 {
 		return nil
 	}
@@ -42,8 +42,8 @@ func (r *InsightRepository) CreateMany(ctx context.Context, insights []*models.S
 	return nil
 }
 
-func (r *InsightRepository) GetByID(ctx context.Context, id string) (*models.StandaloneInsight, error) {
-	var insight models.StandaloneInsight
+func (r *InsightRepository) GetByID(ctx context.Context, id string) (*commonmodels.StandaloneInsight, error) {
+	var insight commonmodels.StandaloneInsight
 	err := r.db.Collection("insights").FindOne(ctx, bson.M{"_id": id}).Decode(&insight)
 	if err != nil {
 		return nil, fmt.Errorf("get insight %s: %w", id, err)
@@ -51,7 +51,7 @@ func (r *InsightRepository) GetByID(ctx context.Context, id string) (*models.Sta
 	return &insight, nil
 }
 
-func (r *InsightRepository) ListByProject(ctx context.Context, projectID string, limit, offset int) ([]*models.StandaloneInsight, error) {
+func (r *InsightRepository) ListByProject(ctx context.Context, projectID string, limit, offset int) ([]*commonmodels.StandaloneInsight, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -66,14 +66,14 @@ func (r *InsightRepository) ListByProject(ctx context.Context, projectID string,
 	}
 	defer cursor.Close(ctx)
 
-	var results []*models.StandaloneInsight
+	var results []*commonmodels.StandaloneInsight
 	if err := cursor.All(ctx, &results); err != nil {
 		return nil, fmt.Errorf("decode insights: %w", err)
 	}
 	return results, nil
 }
 
-func (r *InsightRepository) ListByDiscovery(ctx context.Context, discoveryID string) ([]*models.StandaloneInsight, error) {
+func (r *InsightRepository) ListByDiscovery(ctx context.Context, discoveryID string) ([]*commonmodels.StandaloneInsight, error) {
 	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}})
 	cursor, err := r.db.Collection("insights").Find(ctx, bson.M{"discovery_id": discoveryID}, opts)
 	if err != nil {
@@ -81,7 +81,7 @@ func (r *InsightRepository) ListByDiscovery(ctx context.Context, discoveryID str
 	}
 	defer cursor.Close(ctx)
 
-	var results []*models.StandaloneInsight
+	var results []*commonmodels.StandaloneInsight
 	if err := cursor.All(ctx, &results); err != nil {
 		return nil, fmt.Errorf("decode insights: %w", err)
 	}

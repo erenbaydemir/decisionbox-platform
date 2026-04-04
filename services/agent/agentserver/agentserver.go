@@ -14,9 +14,12 @@ import (
 	"time"
 
 	"github.com/decisionbox-io/decisionbox/libs/go-common/domainpack"
+	goembedding "github.com/decisionbox-io/decisionbox/libs/go-common/embedding"
 	gollm "github.com/decisionbox-io/decisionbox/libs/go-common/llm"
 	gomongo "github.com/decisionbox-io/decisionbox/libs/go-common/mongodb"
 	gosecrets "github.com/decisionbox-io/decisionbox/libs/go-common/secrets"
+	"github.com/decisionbox-io/decisionbox/libs/go-common/vectorstore"
+	qdrantstore "github.com/decisionbox-io/decisionbox/libs/go-common/vectorstore/qdrant"
 	gowarehouse "github.com/decisionbox-io/decisionbox/libs/go-common/warehouse"
 	mongoSecrets "github.com/decisionbox-io/decisionbox/providers/secrets/mongodb"
 	_ "github.com/decisionbox-io/decisionbox/providers/secrets/gcp"   // registers "gcp"
@@ -213,6 +216,74 @@ func initWarehouseProvider(ctx context.Context, project *models.Project, secretP
 	return provider, nil
 }
 
+func initQdrant(ctx context.Context, cfg *config.Config) (vectorstore.Provider, func(), error) {
+	if cfg.Qdrant.URL == "" {
+		applog.Info("Qdrant not configured — vector search disabled")
+		return nil, func() {}, nil
+	}
+
+	// Parse host:port from URL
+	host := cfg.Qdrant.URL
+	port := 6334
+	if parts := strings.SplitN(host, ":", 2); len(parts) == 2 {
+		host = parts[0]
+		if p, err := strconv.Atoi(parts[1]); err == nil {
+			port = p
+		}
+	}
+
+	provider, err := qdrantstore.New(qdrantstore.Config{
+		Host:   host,
+		Port:   port,
+		APIKey: cfg.Qdrant.APIKey,
+	})
+	if err != nil {
+		return nil, func() {}, fmt.Errorf("failed to create Qdrant client: %w", err)
+	}
+
+	if err := provider.HealthCheck(ctx); err != nil {
+		provider.Close()
+		return nil, func() {}, fmt.Errorf("qdrant health check failed: %w", err)
+	}
+
+	applog.WithField("url", cfg.Qdrant.URL).Info("Connected to Qdrant")
+	return provider, func() { provider.Close() }, nil
+}
+
+func initEmbeddingProvider(ctx context.Context, project *models.Project, secretProvider gosecrets.Provider, projectID string) (goembedding.Provider, error) {
+	if project.Embedding.Provider == "" {
+		applog.Info("Embedding provider not configured — Phase 9 will skip embedding")
+		return nil, nil
+	}
+
+	apiKey := ""
+	key, err := secretProvider.Get(ctx, projectID, "embedding-api-key")
+	if err == nil && key != "" {
+		apiKey = key
+		applog.Info("Embedding API key loaded from secret provider")
+	} else if err != nil && err != gosecrets.ErrNotFound {
+		applog.WithError(err).Warn("Failed to read embedding API key from secret provider")
+	}
+
+	embCfg := goembedding.ProviderConfig{
+		"api_key": apiKey,
+		"model":   project.Embedding.Model,
+	}
+
+	provider, err := goembedding.NewProvider(project.Embedding.Provider, embCfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create embedding provider (%s): %w", project.Embedding.Provider, err)
+	}
+
+	applog.WithFields(applog.Fields{
+		"provider": project.Embedding.Provider,
+		"model":    project.Embedding.Model,
+		"dims":     provider.Dimensions(),
+	}).Info("Embedding provider initialized")
+
+	return provider, nil
+}
+
 func initLLMProvider(ctx context.Context, cfg *config.Config, project *models.Project, secretProvider gosecrets.Provider, projectID string) (gollm.Provider, error) {
 	if project.LLM.Provider == "" {
 		return nil, fmt.Errorf("no LLM provider configured")
@@ -402,6 +473,21 @@ func runDiscovery(cfg *config.Config, projectID string, runID string, selectedAr
 		return err
 	}
 
+	// Initialize Qdrant (optional — nil if not configured)
+	qdrantProvider, closeQdrant, err := initQdrant(ctx, cfg)
+	if err != nil {
+		applog.WithError(err).Warn("Qdrant initialization failed — vector search disabled")
+		qdrantProvider = nil
+	}
+	defer closeQdrant()
+
+	// Initialize embedding provider (optional — nil if not configured)
+	embeddingProvider, err := initEmbeddingProvider(ctx, project, secretProvider, projectID)
+	if err != nil {
+		applog.WithError(err).Warn("Embedding provider initialization failed — Phase 9 will skip embedding")
+		embeddingProvider = nil
+	}
+
 	// Initialize AI client
 	aiClient, err := ai.New(llm, project.LLM.Model)
 	if err != nil {
@@ -452,9 +538,11 @@ func runDiscovery(cfg *config.Config, projectID string, runID string, selectedAr
 		Datasets:        datasets,
 		FilterField:     project.Warehouse.FilterField,
 		FilterValue:     project.Warehouse.FilterValue,
-		LLMProvider:     project.LLM.Provider,
-		LLMModel:        project.LLM.Model,
-		EnableDebugLogs: enableDebugLogs,
+		LLMProvider:       project.LLM.Provider,
+		LLMModel:          project.LLM.Model,
+		EnableDebugLogs:   enableDebugLogs,
+		VectorStore:       qdrantProvider,
+		EmbeddingProvider: embeddingProvider,
 	})
 
 	// Estimate mode: calculate costs without running discovery

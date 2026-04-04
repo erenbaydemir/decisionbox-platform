@@ -8,6 +8,8 @@ import (
 // StandaloneInsight is a denormalized insight document stored in the "insights" collection.
 // Each insight has a UUID _id shared with its Qdrant vector point.
 // The source discovery is linked via DiscoveryID.
+//
+// Shared between API (reads) and Agent (writes during Phase 9).
 type StandaloneInsight struct {
 	ID           string `bson:"_id" json:"id"`
 	ProjectID    string `bson:"project_id" json:"project_id"`
@@ -45,6 +47,15 @@ type StandaloneInsight struct {
 type InsightSQLMetadata struct {
 	Query    string `bson:"query,omitempty" json:"query,omitempty"`
 	RowCount int    `bson:"row_count,omitempty" json:"row_count,omitempty"`
+}
+
+// InsightValidation holds the result of warehouse verification for an insight.
+type InsightValidation struct {
+	Status        string    `bson:"status" json:"status"`
+	VerifiedCount int       `bson:"verified_count,omitempty" json:"verified_count,omitempty"`
+	OriginalCount int       `bson:"original_count,omitempty" json:"original_count,omitempty"`
+	Reasoning     string    `bson:"reasoning,omitempty" json:"reasoning,omitempty"`
+	ValidatedAt   time.Time `bson:"validated_at" json:"validated_at"`
 }
 
 // BuildEmbeddingText returns the text to embed for semantic search.

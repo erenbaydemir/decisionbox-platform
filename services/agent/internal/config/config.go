@@ -14,6 +14,14 @@ type Config struct {
 	Service ServiceConfig
 	MongoDB MongoDBConfig
 	LLM     LLMConfig
+	Qdrant  QdrantConfig
+}
+
+// QdrantConfig holds optional Qdrant connection settings.
+// If URL is empty, vector search features are disabled.
+type QdrantConfig struct {
+	URL    string // gRPC address (e.g., "qdrant:6334")
+	APIKey string // optional, for secured instances
 }
 
 type ServiceConfig struct {
@@ -54,6 +62,10 @@ func Load() (*Config, error) {
 			MaxRetries:     config.GetEnvAsInt("LLM_MAX_RETRIES", 3),
 			Timeout:        parseDuration("LLM_TIMEOUT", "300s"),
 			RequestDelayMs: config.GetEnvAsInt("LLM_REQUEST_DELAY_MS", 1000),
+		},
+		Qdrant: QdrantConfig{
+			URL:    config.GetEnv("QDRANT_URL"),
+			APIKey: config.GetEnv("QDRANT_API_KEY"),
 		},
 	}
 

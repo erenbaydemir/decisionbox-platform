@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	commonmodels "github.com/decisionbox-io/decisionbox/libs/go-common/models"
 	"github.com/decisionbox-io/decisionbox/services/api/internal/models"
 )
 
@@ -49,11 +50,11 @@ type PricingRepo interface {
 
 // InsightRepo abstracts insight operations for handler unit testing.
 type InsightRepo interface {
-	Create(ctx context.Context, insight *models.StandaloneInsight) error
-	CreateMany(ctx context.Context, insights []*models.StandaloneInsight) error
-	GetByID(ctx context.Context, id string) (*models.StandaloneInsight, error)
-	ListByProject(ctx context.Context, projectID string, limit, offset int) ([]*models.StandaloneInsight, error)
-	ListByDiscovery(ctx context.Context, discoveryID string) ([]*models.StandaloneInsight, error)
+	Create(ctx context.Context, insight *commonmodels.StandaloneInsight) error
+	CreateMany(ctx context.Context, insights []*commonmodels.StandaloneInsight) error
+	GetByID(ctx context.Context, id string) (*commonmodels.StandaloneInsight, error)
+	ListByProject(ctx context.Context, projectID string, limit, offset int) ([]*commonmodels.StandaloneInsight, error)
+	ListByDiscovery(ctx context.Context, discoveryID string) ([]*commonmodels.StandaloneInsight, error)
 	CountByProject(ctx context.Context, projectID string) (int64, error)
 	UpdateEmbedding(ctx context.Context, id string, embeddingText, embeddingModel string) error
 	UpdateDuplicate(ctx context.Context, id string, duplicateOf string, score float64) error
@@ -62,11 +63,11 @@ type InsightRepo interface {
 
 // RecommendationRepo abstracts recommendation operations for handler unit testing.
 type RecommendationRepo interface {
-	Create(ctx context.Context, rec *models.StandaloneRecommendation) error
-	CreateMany(ctx context.Context, recs []*models.StandaloneRecommendation) error
-	GetByID(ctx context.Context, id string) (*models.StandaloneRecommendation, error)
-	ListByProject(ctx context.Context, projectID string, limit, offset int) ([]*models.StandaloneRecommendation, error)
-	ListByDiscovery(ctx context.Context, discoveryID string) ([]*models.StandaloneRecommendation, error)
+	Create(ctx context.Context, rec *commonmodels.StandaloneRecommendation) error
+	CreateMany(ctx context.Context, recs []*commonmodels.StandaloneRecommendation) error
+	GetByID(ctx context.Context, id string) (*commonmodels.StandaloneRecommendation, error)
+	ListByProject(ctx context.Context, projectID string, limit, offset int) ([]*commonmodels.StandaloneRecommendation, error)
+	ListByDiscovery(ctx context.Context, discoveryID string) ([]*commonmodels.StandaloneRecommendation, error)
 	CountByProject(ctx context.Context, projectID string) (int64, error)
 	UpdateEmbedding(ctx context.Context, id string, embeddingText, embeddingModel string) error
 	UpdateDuplicate(ctx context.Context, id string, duplicateOf string, score float64) error
