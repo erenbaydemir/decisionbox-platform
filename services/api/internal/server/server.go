@@ -7,6 +7,7 @@ import (
 	"github.com/decisionbox-io/decisionbox/libs/go-common/auth"
 	"github.com/decisionbox-io/decisionbox/libs/go-common/health"
 	"github.com/decisionbox-io/decisionbox/libs/go-common/secrets"
+	"github.com/decisionbox-io/decisionbox/libs/go-common/vectorstore"
 	"github.com/decisionbox-io/decisionbox/services/api/internal/database"
 	"github.com/decisionbox-io/decisionbox/services/api/internal/handler"
 	apilog "github.com/decisionbox-io/decisionbox/services/api/internal/log"
@@ -15,7 +16,11 @@ import (
 
 // New creates an HTTP server with all routes registered.
 // Cleans up stale discovery runs from previous container lifecycle.
-func New(db *database.DB, healthHandler *health.Handler, secretProvider secrets.Provider, authProvider auth.Provider) http.Handler {
+func New(db *database.DB, healthHandler *health.Handler, secretProvider secrets.Provider, authProvider auth.Provider, vectorStore ...vectorstore.Provider) http.Handler {
+	var vs vectorstore.Provider
+	if len(vectorStore) > 0 {
+		vs = vectorStore[0]
+	}
 	mux := http.NewServeMux()
 
 	// Repos
@@ -59,6 +64,8 @@ func New(db *database.DB, healthHandler *health.Handler, secretProvider secrets.
 	testConn := handler.NewTestConnectionHandler(projectRepo, agentRunner)
 	insights := handler.NewInsightsHandler(insightRepo)
 	recommendations := handler.NewRecommendationsHandler(recommendationRepo)
+	searchHistoryRepo := database.NewSearchHistoryRepository(db)
+	search := handler.NewSearchHandler(projectRepo, insightRepo, recommendationRepo, searchHistoryRepo, secretProvider, vs)
 
 	// RBAC helpers — wrap a handler with role-based access control.
 	// With NoAuth (default), all requests get "admin" role — all routes pass.
@@ -121,6 +128,9 @@ func New(db *database.DB, healthHandler *health.Handler, secretProvider secrets.
 	mux.HandleFunc("POST /api/v1/discoveries/{runId}/feedback", withRole(member, feedback.Submit))
 	mux.HandleFunc("GET /api/v1/discoveries/{runId}/feedback", withRole(viewer, feedback.List))
 	mux.HandleFunc("DELETE /api/v1/feedback/{id}", withRole(admin, feedback.Delete))
+
+	// Search — viewer
+	mux.HandleFunc("POST /api/v1/projects/{id}/search", withRole(viewer, search.Search))
 
 	// Insights & Recommendations — viewer
 	mux.HandleFunc("GET /api/v1/projects/{id}/insights", withRole(viewer, insights.List))

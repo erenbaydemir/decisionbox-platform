@@ -5,9 +5,12 @@ package apiserver
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -15,6 +18,8 @@ import (
 	"github.com/decisionbox-io/decisionbox/libs/go-common/health"
 	gomongo "github.com/decisionbox-io/decisionbox/libs/go-common/mongodb"
 	gosecrets "github.com/decisionbox-io/decisionbox/libs/go-common/secrets"
+	"github.com/decisionbox-io/decisionbox/libs/go-common/vectorstore"
+	qdrantstore "github.com/decisionbox-io/decisionbox/libs/go-common/vectorstore/qdrant"
 	"github.com/decisionbox-io/decisionbox/services/api/internal/config"
 	"github.com/decisionbox-io/decisionbox/services/api/internal/database"
 	apilog "github.com/decisionbox-io/decisionbox/services/api/internal/log"
@@ -128,8 +133,23 @@ func Run() {
 	// Auth provider (NoAuth by default, plugins can register via auth.RegisterProvider)
 	authProvider := auth.GetProvider()
 
+	// Qdrant (optional — nil if not configured)
+	var qdrantProvider vectorstore.Provider
+	if cfg.Qdrant.URL != "" {
+		qp, closeQdrant, err := initQdrant(ctx, cfg)
+		if err != nil {
+			apilog.WithError(err).Warn("Qdrant initialization failed — vector search disabled")
+		} else {
+			qdrantProvider = qp
+			defer closeQdrant()
+			apilog.WithField("url", cfg.Qdrant.URL).Info("Connected to Qdrant")
+		}
+	} else {
+		apilog.Info("Qdrant not configured — vector search disabled")
+	}
+
 	// HTTP server
-	handler := server.New(db, healthHandler, secretProvider, authProvider)
+	handler := server.New(db, healthHandler, secretProvider, authProvider, qdrantProvider)
 	srv := &http.Server{
 		Addr:         ":" + cfg.Server.Port,
 		Handler:      ApplyGlobalMiddlewares(handler),
@@ -160,4 +180,31 @@ func Run() {
 		apilog.WithError(err).Error("Shutdown error")
 	}
 	apilog.Info("Server stopped")
+}
+
+func initQdrant(ctx context.Context, cfg *config.Config) (vectorstore.Provider, func(), error) {
+	host := cfg.Qdrant.URL
+	port := 6334
+	if parts := strings.SplitN(host, ":", 2); len(parts) == 2 {
+		host = parts[0]
+		if p, err := strconv.Atoi(parts[1]); err == nil {
+			port = p
+		}
+	}
+
+	provider, err := qdrantstore.New(qdrantstore.Config{
+		Host:   host,
+		Port:   port,
+		APIKey: cfg.Qdrant.APIKey,
+	})
+	if err != nil {
+		return nil, func() {}, fmt.Errorf("failed to create Qdrant client: %w", err)
+	}
+
+	if err := provider.HealthCheck(ctx); err != nil {
+		provider.Close()
+		return nil, func() {}, fmt.Errorf("qdrant health check failed: %w", err)
+	}
+
+	return provider, func() { provider.Close() }, nil
 }

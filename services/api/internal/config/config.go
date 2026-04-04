@@ -10,6 +10,14 @@ type Config struct {
 	Service  ServiceConfig
 	MongoDB  MongoDBConfig
 	Server   ServerConfig
+	Qdrant   QdrantConfig
+}
+
+// QdrantConfig holds optional Qdrant connection settings.
+// If URL is empty, vector search features are disabled.
+type QdrantConfig struct {
+	URL    string // gRPC address (e.g., "qdrant:6334")
+	APIKey string // optional, for secured instances
 }
 
 type ServiceConfig struct {
@@ -40,6 +48,10 @@ func Load() (*Config, error) {
 		},
 		Server: ServerConfig{
 			Port: goconfig.GetEnvOrDefault("PORT", "8080"),
+		},
+		Qdrant: QdrantConfig{
+			URL:    goconfig.GetEnv("QDRANT_URL"),
+			APIKey: goconfig.GetEnv("QDRANT_API_KEY"),
 		},
 	}
 
