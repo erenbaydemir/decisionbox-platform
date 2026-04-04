@@ -21,6 +21,8 @@ import (
 	_ "github.com/decisionbox-io/decisionbox/providers/llm/vertex-ai"
 	_ "github.com/decisionbox-io/decisionbox/providers/llm/bedrock"
 	_ "github.com/decisionbox-io/decisionbox/providers/warehouse/bigquery"
+	_ "github.com/decisionbox-io/decisionbox/providers/embedding/openai"
+	_ "github.com/decisionbox-io/decisionbox/providers/embedding/ollama"
 )
 
 func init() {
@@ -299,6 +301,35 @@ func TestProvidersHandler_ListWarehouse(t *testing.T) {
 			fields := pm["config_fields"].([]interface{})
 			if len(fields) < 2 {
 				t.Errorf("bigquery should have >= 2 config fields")
+			}
+		}
+	}
+}
+
+func TestProvidersHandler_ListEmbedding(t *testing.T) {
+	h := NewProvidersHandler()
+	req := httptest.NewRequest("GET", "/api/v1/providers/embedding", nil)
+	w := httptest.NewRecorder()
+
+	h.ListEmbeddingProviders(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d", w.Code)
+	}
+
+	var resp APIResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+	providers := resp.Data.([]interface{})
+	if len(providers) < 2 {
+		t.Errorf("embedding providers = %d, want >= 2 (openai, ollama)", len(providers))
+	}
+
+	for _, p := range providers {
+		pm := p.(map[string]interface{})
+		if pm["id"] == "openai" {
+			models := pm["models"].([]interface{})
+			if len(models) < 2 {
+				t.Errorf("openai should have >= 2 models")
 			}
 		}
 	}

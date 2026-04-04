@@ -80,6 +80,7 @@ func New(db *database.DB, healthHandler *health.Handler, secretProvider secrets.
 	// Providers — viewer
 	mux.HandleFunc("GET /api/v1/providers/llm", withRole(viewer, providers.ListLLMProviders))
 	mux.HandleFunc("GET /api/v1/providers/warehouse", withRole(viewer, providers.ListWarehouseProviders))
+	mux.HandleFunc("GET /api/v1/providers/embedding", withRole(viewer, providers.ListEmbeddingProviders))
 
 	// Domains — viewer
 	mux.HandleFunc("GET /api/v1/domains", withRole(viewer, domains.ListDomains))
