@@ -141,6 +141,9 @@ func (h *ProjectsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if incoming.Prompts != nil {
 		existing.Prompts = incoming.Prompts
 	}
+	if incoming.Embedding.Provider != "" {
+		existing.Embedding = incoming.Embedding
+	}
 
 	if err := h.repo.Update(r.Context(), id, existing); err != nil {
 		apilog.WithFields(apilog.Fields{"project_id": id, "error": err.Error()}).Error("Failed to update project")

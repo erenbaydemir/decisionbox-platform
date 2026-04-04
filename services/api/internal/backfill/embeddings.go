@@ -14,6 +14,7 @@ import (
 	qdrantstore "github.com/decisionbox-io/decisionbox/libs/go-common/vectorstore/qdrant"
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
@@ -102,7 +103,7 @@ func RunBackfillEmbeddings(args []string) {
 
 	for _, proj := range projects {
 		if err := processProject(ctx, mongoClient, secretProvider, qdrant, proj, *batchSize, *reindex, *dryRun, *denormalizeOnly); err != nil {
-			fmt.Fprintf(os.Stderr, "Error processing project %s: %v\n", proj.ID, err)
+			fmt.Fprintf(os.Stderr, "Error processing project %s: %v\n", proj.ID(), err)
 		}
 	}
 
@@ -110,20 +111,28 @@ func RunBackfillEmbeddings(args []string) {
 }
 
 type projectInfo struct {
-	ID       string `bson:"_id"`
-	Name     string `bson:"name"`
-	Domain   string `bson:"domain"`
-	Category string `bson:"category"`
+	OID      primitive.ObjectID `bson:"_id"`
+	Name     string             `bson:"name"`
+	Domain   string             `bson:"domain"`
+	Category string             `bson:"category"`
 	Embedding struct {
 		Provider string `bson:"provider"`
 		Model    string `bson:"model"`
 	} `bson:"embedding"`
 }
 
+func (p projectInfo) ID() string {
+	return p.OID.Hex()
+}
+
 func findProjects(ctx context.Context, client *gomongo.Client, projectID string) ([]projectInfo, error) {
 	filter := bson.M{}
 	if projectID != "" {
-		filter["_id"] = projectID
+		oid, err := primitive.ObjectIDFromHex(projectID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid project ID %q: %w", projectID, err)
+		}
+		filter["_id"] = oid
 	}
 
 	cursor, err := client.Collection("projects").Find(ctx, filter)
@@ -140,7 +149,7 @@ func findProjects(ctx context.Context, client *gomongo.Client, projectID string)
 }
 
 func processProject(ctx context.Context, client *gomongo.Client, secretProvider gosecrets.Provider, qdrant vectorstore.Provider, proj projectInfo, batchSize int, reindex, dryRun, denormalizeOnly bool) error {
-	fmt.Printf("=== Project: %s (%s) ===\n", proj.Name, proj.ID)
+	fmt.Printf("=== Project: %s (%s) ===\n", proj.Name, proj.ID())
 
 	// Step 1: Denormalize discoveries into insights/recommendations collections
 	denormalized, err := denormalizeDiscoveries(ctx, client, proj, dryRun)
@@ -166,7 +175,7 @@ func processProject(ctx context.Context, client *gomongo.Client, secretProvider 
 	}
 
 	// Create embedding provider
-	apiKey, _ := secretProvider.Get(ctx, proj.ID, "embedding-api-key")
+	apiKey, _ := secretProvider.Get(ctx, proj.ID(), "embedding-api-key")
 	embProvider, err := goembedding.NewProvider(proj.Embedding.Provider, goembedding.ProviderConfig{
 		"api_key": apiKey,
 		"model":   proj.Embedding.Model,
@@ -183,7 +192,7 @@ func processProject(ctx context.Context, client *gomongo.Client, secretProvider 
 	}
 
 	// Find documents to embed
-	filter := bson.M{"project_id": proj.ID}
+	filter := bson.M{"project_id": proj.ID()}
 	if !reindex {
 		filter["embedding_model"] = bson.M{"$in": []interface{}{nil, ""}}
 	}
@@ -220,7 +229,7 @@ type denormalizeResult struct {
 
 func denormalizeDiscoveries(ctx context.Context, client *gomongo.Client, proj projectInfo, dryRun bool) (denormalizeResult, error) {
 	// Find all discoveries for this project
-	cursor, err := client.Collection("discoveries").Find(ctx, bson.M{"project_id": proj.ID},
+	cursor, err := client.Collection("discoveries").Find(ctx, bson.M{"project_id": proj.ID()},
 		options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}}))
 	if err != nil {
 		return denormalizeResult{}, err
@@ -317,23 +326,20 @@ func embedCollection(ctx context.Context, client *gomongo.Client, qdrant vectors
 
 	modelName := embProvider.ModelName()
 	total := 0
-	var batch []struct {
-		ID   string
-		Text string
-	}
+	var batch []batchItem
 
 	for cursor.Next(ctx) {
 		var doc struct {
-			ID            string `bson:"_id"`
-			ProjectID     string `bson:"project_id"`
-			DiscoveryID   string `bson:"discovery_id"`
-			Name          string `bson:"name"`
-			Title         string `bson:"title"`
-			Description   string `bson:"description"`
-			AnalysisArea  string `bson:"analysis_area"`
-			Severity      string `bson:"severity"`
-			TargetSegment string `bson:"target_segment"`
-			Confidence    float64 `bson:"confidence"`
+			ID            string    `bson:"_id"`
+			ProjectID     string    `bson:"project_id"`
+			DiscoveryID   string    `bson:"discovery_id"`
+			Name          string    `bson:"name"`
+			Title         string    `bson:"title"`
+			Description   string    `bson:"description"`
+			AnalysisArea  string    `bson:"analysis_area"`
+			Severity      string    `bson:"severity"`
+			TargetSegment string    `bson:"target_segment"`
+			Confidence    float64   `bson:"confidence"`
 			CreatedAt     time.Time `bson:"created_at"`
 		}
 		if err := cursor.Decode(&doc); err != nil {
@@ -350,10 +356,16 @@ func embedCollection(ctx context.Context, client *gomongo.Client, qdrant vectors
 				doc.Title, doc.Description, doc.TargetSegment)
 		}
 
-		batch = append(batch, struct {
-			ID   string
-			Text string
-		}{ID: doc.ID, Text: text})
+		batch = append(batch, batchItem{
+			ID:           doc.ID,
+			Text:         text,
+			ProjectID:    doc.ProjectID,
+			DiscoveryID:  doc.DiscoveryID,
+			AnalysisArea: doc.AnalysisArea,
+			Severity:     doc.Severity,
+			Confidence:   doc.Confidence,
+			CreatedAt:    doc.CreatedAt,
+		})
 
 		if len(batch) >= batchSize {
 			if err := processBatch(ctx, client, qdrant, embProvider, collection, docType, batch, modelName); err != nil {
@@ -375,7 +387,18 @@ func embedCollection(ctx context.Context, client *gomongo.Client, qdrant vectors
 	return total, nil
 }
 
-func processBatch(ctx context.Context, client *gomongo.Client, qdrant vectorstore.Provider, embProvider goembedding.Provider, collection, docType string, batch []struct{ ID, Text string }, modelName string) error {
+type batchItem struct {
+	ID           string
+	Text         string
+	ProjectID    string
+	DiscoveryID  string
+	AnalysisArea string
+	Severity     string
+	Confidence   float64
+	CreatedAt    time.Time
+}
+
+func processBatch(ctx context.Context, client *gomongo.Client, qdrant vectorstore.Provider, embProvider goembedding.Provider, collection, docType string, batch []batchItem, modelName string) error {
 	texts := make([]string, len(batch))
 	for i, b := range batch {
 		texts[i] = b.Text
@@ -399,13 +422,25 @@ func processBatch(ctx context.Context, client *gomongo.Client, qdrant vectorstor
 			fmt.Fprintf(os.Stderr, "    Warning: failed to update %s %s: %v\n", docType, b.ID, err)
 		}
 
+		payload := map[string]interface{}{
+			"type":            docType,
+			"project_id":     b.ProjectID,
+			"discovery_id":   b.DiscoveryID,
+			"embedding_model": modelName,
+			"confidence":     b.Confidence,
+			"created_at":     b.CreatedAt.Format(time.RFC3339),
+		}
+		if b.Severity != "" {
+			payload["severity"] = b.Severity
+		}
+		if b.AnalysisArea != "" {
+			payload["analysis_area"] = b.AnalysisArea
+		}
+
 		points = append(points, vectorstore.Point{
 			ID:     b.ID,
 			Vector: vectors[i],
-			Payload: map[string]interface{}{
-				"type":            docType,
-				"embedding_model": modelName,
-			},
+			Payload: payload,
 		})
 	}
 
