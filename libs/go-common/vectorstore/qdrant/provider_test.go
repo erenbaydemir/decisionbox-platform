@@ -688,5 +688,68 @@ func TestPayloadToMap(t *testing.T) {
 	}
 }
 
+func TestValueToInterface_AllTypes(t *testing.T) {
+	tests := []struct {
+		name  string
+		value *pb.Value
+		want  interface{}
+	}{
+		{"nil", nil, nil},
+		{"string", &pb.Value{Kind: &pb.Value_StringValue{StringValue: "hello"}}, "hello"},
+		{"integer", &pb.Value{Kind: &pb.Value_IntegerValue{IntegerValue: 42}}, int64(42)},
+		{"double", &pb.Value{Kind: &pb.Value_DoubleValue{DoubleValue: 3.14}}, 3.14},
+		{"bool", &pb.Value{Kind: &pb.Value_BoolValue{BoolValue: true}}, true},
+		{"null", &pb.Value{Kind: &pb.Value_NullValue{}}, nil},
+		{"list", &pb.Value{Kind: &pb.Value_ListValue{ListValue: &pb.ListValue{
+			Values: []*pb.Value{
+				{Kind: &pb.Value_StringValue{StringValue: "a"}},
+				{Kind: &pb.Value_IntegerValue{IntegerValue: 1}},
+			},
+		}}}, []interface{}{"a", int64(1)}},
+		{"nil list", &pb.Value{Kind: &pb.Value_ListValue{ListValue: nil}}, nil},
+		{"struct", &pb.Value{Kind: &pb.Value_StructValue{StructValue: &pb.Struct{
+			Fields: map[string]*pb.Value{
+				"key": {Kind: &pb.Value_StringValue{StringValue: "val"}},
+			},
+		}}}, map[string]interface{}{"key": "val"}},
+		{"nil struct", &pb.Value{Kind: &pb.Value_StructValue{StructValue: nil}}, nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := valueToInterface(tt.value)
+			// Deep comparison for slices and maps
+			gotStr := fmt.Sprintf("%v", got)
+			wantStr := fmt.Sprintf("%v", tt.want)
+			if gotStr != wantStr {
+				t.Errorf("valueToInterface(%s) = %v, want %v", tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPointIDToString_Numeric(t *testing.T) {
+	numID := &pb.PointId{PointIdOptions: &pb.PointId_Num{Num: 12345}}
+	got := pointIDToString(numID)
+	if got != "12345" {
+		t.Errorf("pointIDToString(num=12345) = %q, want %q", got, "12345")
+	}
+
+	nilID := pointIDToString(nil)
+	if nilID != "" {
+		t.Errorf("pointIDToString(nil) = %q, want empty", nilID)
+	}
+}
+
+func TestClose(t *testing.T) {
+	mock := newMockClient()
+	p := newWithClient(mock)
+
+	err := p.Close()
+	if err != nil {
+		t.Fatalf("Close() error: %v", err)
+	}
+}
+
 // Verify Provider satisfies vectorstore.Provider interface.
 var _ vectorstore.Provider = (*Provider)(nil)

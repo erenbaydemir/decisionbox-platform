@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -205,6 +206,283 @@ func TestConvertValidation(t *testing.T) {
 	}
 	if result.VerifiedCount != 100 {
 		t.Errorf("expected verified_count=100, got %d", result.VerifiedCount)
+	}
+}
+
+// mockEmbedIndexStore implements EmbedIndexStore for testing.
+type mockEmbedIndexStore struct {
+	insertedInsights []*commonmodels.StandaloneInsight
+	insertedRecs     []*commonmodels.StandaloneRecommendation
+	embedUpdates     []embedUpdate
+	dupUpdates       []dupUpdate
+	insertError      error
+}
+
+type embedUpdate struct {
+	Collection, ID, Text, Model string
+}
+type dupUpdate struct {
+	Collection, ID, DupOf string
+	Score                 float64
+}
+
+func (m *mockEmbedIndexStore) InsertInsights(_ context.Context, ins []*commonmodels.StandaloneInsight) error {
+	if m.insertError != nil {
+		return m.insertError
+	}
+	m.insertedInsights = append(m.insertedInsights, ins...)
+	return nil
+}
+func (m *mockEmbedIndexStore) InsertRecommendations(_ context.Context, recs []*commonmodels.StandaloneRecommendation) error {
+	if m.insertError != nil {
+		return m.insertError
+	}
+	m.insertedRecs = append(m.insertedRecs, recs...)
+	return nil
+}
+func (m *mockEmbedIndexStore) UpdateEmbedding(_ context.Context, collection, id, text, model string) error {
+	m.embedUpdates = append(m.embedUpdates, embedUpdate{collection, id, text, model})
+	return nil
+}
+func (m *mockEmbedIndexStore) UpdateDuplicate(_ context.Context, collection, id, dupOf string, score float64) error {
+	m.dupUpdates = append(m.dupUpdates, dupUpdate{collection, id, dupOf, score})
+	return nil
+}
+
+func TestSaveStandaloneDocuments_Success(t *testing.T) {
+	store := &mockEmbedIndexStore{}
+	o := &Orchestrator{embedIndexStore: store}
+
+	insights := []*commonmodels.StandaloneInsight{
+		{ID: "ins-1", ProjectID: "proj-1", Name: "Test insight"},
+	}
+	recs := []*commonmodels.StandaloneRecommendation{
+		{ID: "rec-1", ProjectID: "proj-1", Title: "Test rec"},
+	}
+
+	err := o.saveStandaloneDocuments(context.Background(), insights, recs)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(store.insertedInsights) != 1 {
+		t.Errorf("expected 1 insight inserted, got %d", len(store.insertedInsights))
+	}
+	if len(store.insertedRecs) != 1 {
+		t.Errorf("expected 1 rec inserted, got %d", len(store.insertedRecs))
+	}
+}
+
+func TestSaveStandaloneDocuments_Error(t *testing.T) {
+	store := &mockEmbedIndexStore{insertError: fmt.Errorf("db error")}
+	o := &Orchestrator{embedIndexStore: store}
+
+	err := o.saveStandaloneDocuments(context.Background(),
+		[]*commonmodels.StandaloneInsight{{ID: "ins-1"}}, nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestEmbedAndIndex_Success(t *testing.T) {
+	store := &mockEmbedIndexStore{}
+	mockEmb := &mockEmbeddingProvider{dims: 3, model: "test-model"}
+	mockVS := &mockVectorStore{}
+
+	o := &Orchestrator{
+		embedIndexStore:   store,
+		embeddingProvider: mockEmb,
+		vectorStore:       mockVS,
+	}
+
+	insights := []*commonmodels.StandaloneInsight{
+		{ID: "ins-1", ProjectID: "proj-1", DiscoveryID: "disc-1",
+			Name: "High churn", Description: "Players leaving",
+			AnalysisArea: "churn", Severity: "high", Confidence: 0.85, CreatedAt: time.Now()},
+	}
+	recs := []*commonmodels.StandaloneRecommendation{
+		{ID: "rec-1", ProjectID: "proj-1", DiscoveryID: "disc-1",
+			Title: "Add retries", Description: "Impl retries",
+			Confidence: 0.78, CreatedAt: time.Now()},
+	}
+
+	err := o.embedAndIndex(context.Background(), insights, recs)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !mockVS.ensured {
+		t.Error("expected EnsureCollection to be called")
+	}
+	if mockEmb.calls != 1 {
+		t.Errorf("expected 1 Embed call, got %d", mockEmb.calls)
+	}
+	if len(mockVS.upserted) != 2 {
+		t.Errorf("expected 2 points upserted, got %d", len(mockVS.upserted))
+	}
+	if len(store.embedUpdates) != 2 {
+		t.Errorf("expected 2 embedding updates, got %d", len(store.embedUpdates))
+	}
+	// Verify embedding text was set
+	if insights[0].EmbeddingText == "" {
+		t.Error("expected embedding text to be set on insight")
+	}
+	if insights[0].EmbeddingModel != "test-model" {
+		t.Errorf("expected model=test-model, got %s", insights[0].EmbeddingModel)
+	}
+}
+
+func TestEmbedAndIndex_EmptyDocuments(t *testing.T) {
+	store := &mockEmbedIndexStore{}
+	mockEmb := &mockEmbeddingProvider{dims: 3, model: "test-model"}
+	mockVS := &mockVectorStore{}
+
+	o := &Orchestrator{
+		embedIndexStore:   store,
+		embeddingProvider: mockEmb,
+		vectorStore:       mockVS,
+	}
+
+	err := o.embedAndIndex(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error for empty docs: %v", err)
+	}
+	// EnsureCollection should still be called
+	if !mockVS.ensured {
+		t.Error("expected EnsureCollection to be called")
+	}
+	if mockEmb.calls != 0 {
+		t.Errorf("expected 0 embed calls for empty docs, got %d", mockEmb.calls)
+	}
+}
+
+func TestCheckAndMarkDuplicate_Found(t *testing.T) {
+	store := &mockEmbedIndexStore{}
+	mockVS := &mockVectorStore{
+		dupes: []vectorstore.SearchResult{
+			{ID: "existing-1", Score: 0.97},
+		},
+	}
+
+	o := &Orchestrator{
+		embedIndexStore: store,
+		vectorStore:     mockVS,
+	}
+
+	o.checkAndMarkDuplicate(context.Background(), "new-1", []float64{0.1, 0.2}, "proj-1", "insight", "disc-2")
+
+	if len(store.dupUpdates) != 1 {
+		t.Fatalf("expected 1 duplicate update, got %d", len(store.dupUpdates))
+	}
+	if store.dupUpdates[0].DupOf != "existing-1" {
+		t.Errorf("expected duplicate_of=existing-1, got %s", store.dupUpdates[0].DupOf)
+	}
+	if store.dupUpdates[0].Score != 0.97 {
+		t.Errorf("expected score=0.97, got %f", store.dupUpdates[0].Score)
+	}
+	if store.dupUpdates[0].Collection != "insights" {
+		t.Errorf("expected collection=insights, got %s", store.dupUpdates[0].Collection)
+	}
+}
+
+func TestCheckAndMarkDuplicate_NotFound(t *testing.T) {
+	store := &mockEmbedIndexStore{}
+	mockVS := &mockVectorStore{dupes: nil}
+
+	o := &Orchestrator{
+		embedIndexStore: store,
+		vectorStore:     mockVS,
+	}
+
+	o.checkAndMarkDuplicate(context.Background(), "new-1", []float64{0.1, 0.2}, "proj-1", "insight", "disc-2")
+
+	if len(store.dupUpdates) != 0 {
+		t.Errorf("expected 0 duplicate updates, got %d", len(store.dupUpdates))
+	}
+}
+
+func TestCheckAndMarkDuplicate_Recommendation(t *testing.T) {
+	store := &mockEmbedIndexStore{}
+	mockVS := &mockVectorStore{
+		dupes: []vectorstore.SearchResult{
+			{ID: "existing-rec", Score: 0.96},
+		},
+	}
+
+	o := &Orchestrator{
+		embedIndexStore: store,
+		vectorStore:     mockVS,
+	}
+
+	o.checkAndMarkDuplicate(context.Background(), "new-rec", []float64{0.1, 0.2}, "proj-1", "recommendation", "disc-2")
+
+	if len(store.dupUpdates) != 1 {
+		t.Fatalf("expected 1 duplicate update, got %d", len(store.dupUpdates))
+	}
+	if store.dupUpdates[0].Collection != "recommendations" {
+		t.Errorf("expected collection=recommendations, got %s", store.dupUpdates[0].Collection)
+	}
+}
+
+func TestRunPhaseEmbedIndex_DenormalizeOnly(t *testing.T) {
+	store := &mockEmbedIndexStore{}
+	// No embeddingProvider or vectorStore — should denormalize only
+	o := &Orchestrator{
+		embedIndexStore:   store,
+		statusReporter:    &StatusReporter{},
+	}
+
+	result := &models.DiscoveryResult{
+		ID:        "disc-1",
+		ProjectID: "proj-1",
+		Domain:    "gaming",
+		Category:  "match3",
+		Insights: []models.Insight{
+			{Name: "Test", Description: "Test insight", Severity: "high", DiscoveredAt: time.Now()},
+		},
+	}
+
+	o.runPhaseEmbedIndex(context.Background(), result)
+
+	if len(store.insertedInsights) != 1 {
+		t.Errorf("expected 1 insight inserted, got %d", len(store.insertedInsights))
+	}
+}
+
+func TestRunPhaseEmbedIndex_FullPipeline(t *testing.T) {
+	store := &mockEmbedIndexStore{}
+	mockEmb := &mockEmbeddingProvider{dims: 3, model: "test-model"}
+	mockVS := &mockVectorStore{}
+
+	o := &Orchestrator{
+		embedIndexStore:   store,
+		embeddingProvider: mockEmb,
+		vectorStore:       mockVS,
+		statusReporter:    &StatusReporter{},
+	}
+
+	result := &models.DiscoveryResult{
+		ID:        "disc-1",
+		ProjectID: "proj-1",
+		Domain:    "gaming",
+		Category:  "match3",
+		Insights: []models.Insight{
+			{Name: "Test insight", Description: "Desc", Severity: "high", DiscoveredAt: time.Now()},
+		},
+		Recommendations: []models.Recommendation{
+			{Title: "Test rec", Description: "Desc", Priority: 1},
+		},
+	}
+
+	o.runPhaseEmbedIndex(context.Background(), result)
+
+	if len(store.insertedInsights) != 1 {
+		t.Errorf("expected 1 insight, got %d", len(store.insertedInsights))
+	}
+	if len(store.insertedRecs) != 1 {
+		t.Errorf("expected 1 rec, got %d", len(store.insertedRecs))
+	}
+	if len(mockVS.upserted) != 2 {
+		t.Errorf("expected 2 points upserted, got %d", len(mockVS.upserted))
 	}
 }
 
