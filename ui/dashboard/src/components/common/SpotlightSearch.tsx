@@ -95,7 +95,7 @@ export default function SpotlightSearch() {
   const goToAsk = useCallback((q: string) => {
     setOpen(false);
     setQuery('');
-    router.push(`/projects/${projectId}/ask`);
+    router.push(`/projects/${projectId}/ask?q=${encodeURIComponent(q)}`);
   }, [router, projectId]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -168,6 +168,10 @@ export default function SpotlightSearch() {
             : 'Select a project first'
           }
           disabled={!projectId}
+          role="combobox"
+          aria-expanded={!!showDropdown}
+          aria-haspopup="listbox"
+          aria-autocomplete="list"
           style={{
             flex: 1, border: 'none', background: 'transparent', outline: 'none',
             fontSize: 13, color: 'var(--db-text-primary)', fontFamily: 'inherit',
@@ -207,7 +211,7 @@ export default function SpotlightSearch() {
 
       {/* Dropdown */}
       {showDropdown && (
-        <div style={{
+        <div role="listbox" style={{
           position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
           width: 460, marginTop: 6,
           background: 'var(--db-bg-white)', border: '1px solid var(--db-border-default)',
@@ -408,6 +412,8 @@ function DropdownRow({ children, selected, onClick, onHover }: {
 }) {
   return (
     <div
+      role="option"
+      aria-selected={selected || false}
       onClick={onClick}
       onMouseEnter={e => {
         e.currentTarget.style.background = 'var(--db-bg-muted)';

@@ -111,28 +111,12 @@ func (o *Orchestrator) denormalizeRecommendations(result *models.DiscoveryResult
 
 // saveStandaloneDocuments saves denormalized insights/recommendations to MongoDB.
 func (o *Orchestrator) saveStandaloneDocuments(ctx context.Context, insights []*commonmodels.StandaloneInsight, recs []*commonmodels.StandaloneRecommendation) error {
-	if len(insights) > 0 {
-		docs := make([]interface{}, len(insights))
-		for i, ins := range insights {
-			docs[i] = ins
-		}
-		_, err := o.db.Collection("insights").InsertMany(ctx, docs)
-		if err != nil {
-			return fmt.Errorf("insert insights: %w", err)
-		}
+	if err := o.embedIndexStore.InsertInsights(ctx, insights); err != nil {
+		return err
 	}
-
-	if len(recs) > 0 {
-		docs := make([]interface{}, len(recs))
-		for i, rec := range recs {
-			docs[i] = rec
-		}
-		_, err := o.db.Collection("recommendations").InsertMany(ctx, docs)
-		if err != nil {
-			return fmt.Errorf("insert recommendations: %w", err)
-		}
+	if err := o.embedIndexStore.InsertRecommendations(ctx, recs); err != nil {
+		return err
 	}
-
 	return nil
 }
 
@@ -189,13 +173,7 @@ func (o *Orchestrator) embedAndIndex(ctx context.Context, insights []*commonmode
 		vecIdx++
 
 		// Update MongoDB with embedding fields
-		_, err := o.db.Collection("insights").UpdateByID(ctx, ins.ID, map[string]interface{}{
-			"$set": map[string]interface{}{
-				"embedding_text":  ins.EmbeddingText,
-				"embedding_model": ins.EmbeddingModel,
-			},
-		})
-		if err != nil {
+		if err := o.embedIndexStore.UpdateEmbedding(ctx, "insights", ins.ID, ins.EmbeddingText, ins.EmbeddingModel); err != nil {
 			applog.WithError(err).WithField("id", ins.ID).Warn("Failed to update insight embedding")
 		}
 
@@ -223,13 +201,7 @@ func (o *Orchestrator) embedAndIndex(ctx context.Context, insights []*commonmode
 		vecIdx++
 
 		// Update MongoDB with embedding fields
-		_, err := o.db.Collection("recommendations").UpdateByID(ctx, rec.ID, map[string]interface{}{
-			"$set": map[string]interface{}{
-				"embedding_text":  rec.EmbeddingText,
-				"embedding_model": rec.EmbeddingModel,
-			},
-		})
-		if err != nil {
+		if err := o.embedIndexStore.UpdateEmbedding(ctx, "recommendations", rec.ID, rec.EmbeddingText, rec.EmbeddingModel); err != nil {
 			applog.WithError(err).WithField("id", rec.ID).Warn("Failed to update recommendation embedding")
 		}
 
@@ -289,13 +261,7 @@ func (o *Orchestrator) checkAndMarkDuplicate(ctx context.Context, docID string, 
 		collection = "recommendations"
 	}
 
-	_, err = o.db.Collection(collection).UpdateByID(ctx, docID, map[string]interface{}{
-		"$set": map[string]interface{}{
-			"duplicate_of":     dup.ID,
-			"similarity_score": dup.Score,
-		},
-	})
-	if err != nil {
+	if err := o.embedIndexStore.UpdateDuplicate(ctx, collection, docID, dup.ID, dup.Score); err != nil {
 		applog.WithError(err).WithField("id", docID).Warn("Failed to mark duplicate")
 	}
 }

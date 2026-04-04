@@ -122,9 +122,9 @@ export default function RecommendationsListPage() {
   ];
 
   const effortColors: Record<string, { bg: string; color: string }> = {
-    low: { bg: '#EAF3DE', color: '#3B6D11' },
+    low: { bg: 'var(--db-severity-low-bg)', color: 'var(--db-severity-low-text)' },
     medium: { bg: 'var(--db-amber-bg)', color: 'var(--db-amber-text)' },
-    high: { bg: '#FAECE7', color: '#993C1D' },
+    high: { bg: 'var(--db-severity-high-bg)', color: 'var(--db-severity-high-text)' },
   };
 
   return (

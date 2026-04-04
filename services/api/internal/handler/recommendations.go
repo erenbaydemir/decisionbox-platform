@@ -25,8 +25,24 @@ func (h *RecommendationsHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	limit := 50
+	if v := r.URL.Query().Get("limit"); v != "" {
+		parsed, err := strconv.Atoi(v)
+		if err != nil || parsed < 0 {
+			writeError(w, http.StatusBadRequest, "invalid limit parameter")
+			return
+		}
+		limit = parsed
+	}
+	offset := 0
+	if v := r.URL.Query().Get("offset"); v != "" {
+		parsed, err := strconv.Atoi(v)
+		if err != nil || parsed < 0 {
+			writeError(w, http.StatusBadRequest, "invalid offset parameter")
+			return
+		}
+		offset = parsed
+	}
 
 	recs, err := h.repo.ListByProject(r.Context(), projectID, limit, offset)
 	if err != nil {
@@ -46,8 +62,14 @@ func (h *RecommendationsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	projectID := r.PathValue("id")
+
 	rec, err := h.repo.GetByID(r.Context(), recID)
 	if err != nil {
+		writeError(w, http.StatusNotFound, "recommendation not found")
+		return
+	}
+	if rec.ProjectID != projectID {
 		writeError(w, http.StatusNotFound, "recommendation not found")
 		return
 	}

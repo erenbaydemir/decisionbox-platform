@@ -59,6 +59,13 @@ export default function SearchPage() {
     }
   }, [initialQuery]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Re-run search when filters change (if already searched)
+  useEffect(() => {
+    if (searched && query.trim()) {
+      runSearch(query);
+    }
+  }, [typeFilter, severityFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     runSearch(query);
@@ -91,7 +98,7 @@ export default function SearchPage() {
         <div style={{ display: 'flex', gap: 12, marginBottom: 20, alignItems: 'center' }}>
           <SegmentedControl
             value={typeFilter}
-            onChange={v => { setTypeFilter(v); if (searched) runSearch(query); }}
+            onChange={v => setTypeFilter(v)}
             data={[
               { label: 'All', value: 'all' },
               { label: 'Insights', value: 'insight' },
@@ -102,7 +109,7 @@ export default function SearchPage() {
           <Select
             placeholder="Severity"
             value={severityFilter}
-            onChange={v => { setSeverityFilter(v); if (searched) runSearch(query); }}
+            onChange={v => setSeverityFilter(v)}
             data={[
               { label: 'All severities', value: '' },
               { label: 'Critical', value: 'critical' },

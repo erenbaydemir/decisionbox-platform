@@ -90,6 +90,9 @@ func RunBackfillEmbeddings(args []string) {
 			return
 		}
 		fmt.Printf("Connected to Qdrant (%s)\n", qdrantURL)
+		if closer, ok := qdrant.(interface{ Close() error }); ok {
+			defer closer.Close()
+		}
 	}
 
 	// Find projects to process

@@ -96,6 +96,8 @@ func (h *SearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 40<<20) // 40 MB limit
+
 	var req searchRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -107,6 +109,9 @@ func (h *SearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Limit <= 0 {
 		req.Limit = 10
+	}
+	if req.Limit > 100 {
+		req.Limit = 100
 	}
 
 	ctx := r.Context()
@@ -156,7 +161,11 @@ func (h *SearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 	items := h.enrichResults(ctx, searchResults)
 
 	// Save search history (fire and forget — background context so it survives request cancellation)
-	go h.saveSearchHistory(context.Background(), projectID, req, items) //nolint:gosec // intentional: background context outlives the request
+	bgCtx, bgCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	go func() {
+		defer bgCancel()
+		h.saveSearchHistory(bgCtx, projectID, req, items)
+	}()
 
 	writeJSON(w, http.StatusOK, searchResponse{
 		Results:        items,
@@ -275,6 +284,8 @@ func (h *SearchHandler) CrossProjectSearch(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 40<<20) // 40 MB limit
+
 	var req crossSearchRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -290,6 +301,9 @@ func (h *SearchHandler) CrossProjectSearch(w http.ResponseWriter, r *http.Reques
 	}
 	if req.Limit <= 0 {
 		req.Limit = 20
+	}
+	if req.Limit > 200 {
+		req.Limit = 200
 	}
 
 	ctx := r.Context()
@@ -321,23 +335,19 @@ func (h *SearchHandler) CrossProjectSearch(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Use the first matching project's API key to embed the query
-	firstProject := matchingIDs[0]
-	embProvider, err := h.createEmbeddingProvider(ctx, "", req.EmbeddingModel, firstProject)
-	if err != nil {
-		// Try to find a project that actually has the right provider
-		for _, p := range allProjects {
-			if p.Embedding.Model == req.EmbeddingModel && p.Embedding.Provider != "" {
-				embProvider, err = h.createEmbeddingProvider(ctx, p.Embedding.Provider, req.EmbeddingModel, p.ID)
-				if err == nil {
-					break
-				}
+	// Find a project with a valid embedding provider to embed the query
+	var embProvider goembedding.Provider
+	for _, p := range allProjects {
+		if p.Embedding.Model == req.EmbeddingModel && p.Embedding.Provider != "" {
+			embProvider, err = h.createEmbeddingProvider(ctx, p.Embedding.Provider, req.EmbeddingModel, p.ID)
+			if err == nil {
+				break
 			}
 		}
-		if embProvider == nil {
-			writeError(w, http.StatusInternalServerError, "failed to create embedding provider")
-			return
-		}
+	}
+	if embProvider == nil {
+		writeError(w, http.StatusInternalServerError, "failed to create embedding provider")
+		return
 	}
 
 	vectors, err := embProvider.Embed(ctx, []string{req.Query})
@@ -405,6 +415,8 @@ func (h *SearchHandler) Ask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 40<<20) // 40 MB limit
+
 	var req askRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -416,6 +428,9 @@ func (h *SearchHandler) Ask(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Limit <= 0 {
 		req.Limit = 5
+	}
+	if req.Limit > 100 {
+		req.Limit = 100
 	}
 
 	ctx := r.Context()
@@ -490,7 +505,15 @@ func (h *SearchHandler) Ask(w http.ResponseWriter, r *http.Request) {
 	if req.SessionID != "" {
 		session, err := h.sessionRepo.GetByID(ctx, req.SessionID)
 		if err == nil && session != nil {
-			for _, m := range session.Messages {
+			if session.ProjectID != projectID {
+				writeError(w, http.StatusBadRequest, "session does not belong to this project")
+				return
+			}
+			msgs := session.Messages
+			if len(msgs) > 10 {
+				msgs = msgs[len(msgs)-10:]
+			}
+			for _, m := range msgs {
 				messages = append(messages,
 					gollm.Message{Role: "user", Content: m.Question},
 					gollm.Message{Role: "assistant", Content: m.Answer},
@@ -579,32 +602,6 @@ func (h *SearchHandler) createLLMProvider(ctx context.Context, project *models.P
 	return gollm.NewProvider(project.LLM.Provider, cfg)
 }
 
-// saveAskHistory records the ask query for analytics.
-func (h *SearchHandler) saveAskHistory(ctx context.Context, projectID, question, answer string, sources []searchResultItem, model string, tokens int) {
-	sourceIDs := make([]string, 0, len(sources))
-	for _, s := range sources {
-		sourceIDs = append(sourceIDs, s.ID)
-	}
-
-	entry := &commonmodels.SearchHistory{
-		ID:            uuid.New().String(),
-		UserID:        "anonymous",
-		ProjectID:     projectID,
-		Query:         question,
-		Type:          "ask",
-		ResultsCount:  len(sources),
-		AnswerSummary: answer,
-		SourceIDs:     sourceIDs,
-		LLMModel:      model,
-		TokensUsed:    tokens,
-		CreatedAt:     time.Now(),
-	}
-
-	if err := h.historyRepo.Save(ctx, entry); err != nil {
-		apilog.WithError(err).Warn("Failed to save ask history")
-	}
-}
-
 // ListHistory returns recent search/ask queries for a project.
 // GET /api/v1/projects/{id}/search/history?limit=20
 func (h *SearchHandler) ListHistory(w http.ResponseWriter, r *http.Request) {
@@ -614,7 +611,15 @@ func (h *SearchHandler) ListHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	limit := 20
+	if v := r.URL.Query().Get("limit"); v != "" {
+		parsed, err := strconv.Atoi(v)
+		if err != nil || parsed < 0 {
+			writeError(w, http.StatusBadRequest, "invalid limit parameter")
+			return
+		}
+		limit = parsed
+	}
 
 	entries, err := h.historyRepo.ListByProject(r.Context(), projectID, limit)
 	if err != nil {
@@ -634,7 +639,15 @@ func (h *SearchHandler) ListAskSessions(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	limit := 20
+	if v := r.URL.Query().Get("limit"); v != "" {
+		parsed, err := strconv.Atoi(v)
+		if err != nil || parsed < 0 {
+			writeError(w, http.StatusBadRequest, "invalid limit parameter")
+			return
+		}
+		limit = parsed
+	}
 
 	sessions, err := h.sessionRepo.ListByProject(r.Context(), projectID, limit)
 	if err != nil {
@@ -648,6 +661,7 @@ func (h *SearchHandler) ListAskSessions(w http.ResponseWriter, r *http.Request) 
 // GetAskSession returns a full ask session with all messages.
 // GET /api/v1/projects/{id}/ask/sessions/{sessionId}
 func (h *SearchHandler) GetAskSession(w http.ResponseWriter, r *http.Request) {
+	projectID := r.PathValue("id")
 	sessionID := r.PathValue("sessionId")
 	if sessionID == "" {
 		writeError(w, http.StatusBadRequest, "session ID is required")
@@ -659,6 +673,10 @@ func (h *SearchHandler) GetAskSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "session not found")
 		return
 	}
+	if session.ProjectID != projectID {
+		writeError(w, http.StatusNotFound, "session not found")
+		return
+	}
 
 	writeJSON(w, http.StatusOK, session)
 }
@@ -666,9 +684,21 @@ func (h *SearchHandler) GetAskSession(w http.ResponseWriter, r *http.Request) {
 // DeleteAskSession deletes an ask session.
 // DELETE /api/v1/projects/{id}/ask/sessions/{sessionId}
 func (h *SearchHandler) DeleteAskSession(w http.ResponseWriter, r *http.Request) {
+	projectID := r.PathValue("id")
 	sessionID := r.PathValue("sessionId")
 	if sessionID == "" {
 		writeError(w, http.StatusBadRequest, "session ID is required")
+		return
+	}
+
+	// Verify session belongs to this project
+	session, err := h.sessionRepo.GetByID(r.Context(), sessionID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "session not found")
+		return
+	}
+	if session.ProjectID != projectID {
+		writeError(w, http.StatusNotFound, "session not found")
 		return
 	}
 
@@ -680,9 +710,3 @@ func (h *SearchHandler) DeleteAskSession(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "..."
-}

@@ -117,7 +117,7 @@ func (p *provider) Embed(ctx context.Context, texts []string) ([][]float64, erro
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 40<<20)) // 40 MB limit
 	if err != nil {
 		return nil, fmt.Errorf("openai embedding: failed to read response: %w", err)
 	}

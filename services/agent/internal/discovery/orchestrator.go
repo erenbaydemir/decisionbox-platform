@@ -53,7 +53,7 @@ type Orchestrator struct {
 
 	vectorStore       vectorstore.Provider
 	embeddingProvider goembedding.Provider
-	db                *database.DB
+	embedIndexStore   EmbedIndexStore
 }
 
 // OrchestratorOptions configures the orchestrator.
@@ -86,8 +86,8 @@ type OrchestratorOptions struct {
 	VectorStore       vectorstore.Provider
 	EmbeddingProvider goembedding.Provider
 
-	// DB is needed for Phase 9 to write to insights/recommendations collections
-	DB *database.DB
+	// EmbedIndexStore is needed for Phase 9 to write to insights/recommendations collections
+	EmbedIndexStore EmbedIndexStore
 }
 
 // NewOrchestrator creates a new discovery orchestrator.
@@ -149,7 +149,7 @@ func NewOrchestrator(opts OrchestratorOptions) *Orchestrator {
 		llmModel:           opts.LLMModel,
 		vectorStore:        opts.VectorStore,
 		embeddingProvider:  opts.EmbeddingProvider,
-		db:                 opts.DB,
+		embedIndexStore:    opts.EmbedIndexStore,
 	}
 }
 
@@ -522,7 +522,7 @@ func (o *Orchestrator) RunDiscovery(ctx context.Context, opts DiscoveryOptions) 
 	}
 
 	// Phase 9: Embed & Index (non-fatal — errors logged, discovery still completes)
-	if o.db != nil {
+	if o.embedIndexStore != nil {
 		o.runPhaseEmbedIndex(ctx, result)
 	}
 

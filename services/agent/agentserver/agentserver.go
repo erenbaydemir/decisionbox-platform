@@ -549,7 +549,7 @@ func runDiscovery(cfg *config.Config, projectID string, runID string, selectedAr
 		EnableDebugLogs:   enableDebugLogs,
 		VectorStore:       qdrantProvider,
 		EmbeddingProvider: embeddingProvider,
-		DB:                db,
+		EmbedIndexStore:   discovery.NewMongoEmbedIndexStore(db),
 	})
 
 	// Estimate mode: calculate costs without running discovery

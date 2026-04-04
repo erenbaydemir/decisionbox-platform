@@ -67,6 +67,23 @@ func (m *mockSearchHistoryRepo) ListByProject(_ context.Context, _ string, _ int
 	return nil, nil
 }
 
+// mockAskSessionRepo discards all operations.
+type mockAskSessionRepo struct{}
+
+func (m *mockAskSessionRepo) Create(_ context.Context, _ *commonmodels.AskSession) error {
+	return nil
+}
+func (m *mockAskSessionRepo) AppendMessage(_ context.Context, _ string, _ commonmodels.AskSessionMessage) error {
+	return nil
+}
+func (m *mockAskSessionRepo) GetByID(_ context.Context, _ string) (*commonmodels.AskSession, error) {
+	return nil, nil
+}
+func (m *mockAskSessionRepo) ListByProject(_ context.Context, _ string, _ int) ([]*commonmodels.AskSession, error) {
+	return nil, nil
+}
+func (m *mockAskSessionRepo) Delete(_ context.Context, _ string) error { return nil }
+
 // mockSecretProviderForSearch returns a pre-set API key.
 type mockSecretProviderForSearch struct{}
 
@@ -151,6 +168,7 @@ func TestSearchHandler_Search(t *testing.T) {
 		insightRepo,
 		&mockRecommendationRepo{},
 		&mockSearchHistoryRepo{},
+		&mockAskSessionRepo{},
 		&mockSecretProviderForSearch{},
 		vs,
 	)
@@ -191,7 +209,7 @@ func TestSearchHandler_Search(t *testing.T) {
 }
 
 func TestSearchHandler_NoVectorStore(t *testing.T) {
-	h := NewSearchHandler(nil, nil, nil, nil, nil, nil) // no Qdrant
+	h := NewSearchHandler(nil, nil, nil, nil, nil, nil, nil) // no Qdrant
 
 	body, _ := json.Marshal(searchRequest{Query: "test"})
 	req := httptest.NewRequest("POST", "/api/v1/projects/proj-1/search", bytes.NewReader(body))
@@ -206,7 +224,7 @@ func TestSearchHandler_NoVectorStore(t *testing.T) {
 }
 
 func TestSearchHandler_EmptyQuery(t *testing.T) {
-	h := NewSearchHandler(nil, nil, nil, nil, nil, &mockVectorStoreForSearch{})
+	h := NewSearchHandler(nil, nil, nil, nil, nil, nil, &mockVectorStoreForSearch{})
 
 	body, _ := json.Marshal(searchRequest{Query: ""})
 	req := httptest.NewRequest("POST", "/api/v1/projects/proj-1/search", bytes.NewReader(body))
@@ -228,7 +246,7 @@ func TestSearchHandler_NoEmbeddingConfig(t *testing.T) {
 		},
 	}
 
-	h := NewSearchHandler(projectRepo, nil, nil, nil, nil, &mockVectorStoreForSearch{})
+	h := NewSearchHandler(projectRepo, nil, nil, nil, nil, nil, &mockVectorStoreForSearch{})
 
 	body, _ := json.Marshal(searchRequest{Query: "test"})
 	req := httptest.NewRequest("POST", "/api/v1/projects/proj-1/search", bytes.NewReader(body))
