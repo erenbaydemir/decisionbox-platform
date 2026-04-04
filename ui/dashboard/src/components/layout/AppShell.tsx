@@ -14,9 +14,10 @@ interface ShellProps {
   children: ReactNode;
   breadcrumb?: { label: string; href?: string }[];
   actions?: ReactNode;
+  fullWidth?: boolean;
 }
 
-export default function Shell({ children, breadcrumb, actions }: ShellProps) {
+export default function Shell({ children, breadcrumb, actions, fullWidth }: ShellProps) {
   const pathname = usePathname();
   const params = useParams<{ id?: string }>();
   const projectId = params?.id;
@@ -263,7 +264,7 @@ export default function Shell({ children, breadcrumb, actions }: ShellProps) {
 
         {/* Content */}
         <main style={{
-          maxWidth: 'var(--db-content-max-width)',
+          maxWidth: fullWidth ? '100%' : 'var(--db-content-max-width)',
           padding: 'var(--db-content-padding)',
           width: '100%',
         }}>

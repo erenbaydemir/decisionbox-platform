@@ -80,6 +80,15 @@ type SearchHistoryRepo interface {
 	ListByProject(ctx context.Context, projectID string, limit int) ([]*commonmodels.SearchHistory, error)
 }
 
+// AskSessionRepo abstracts ask session (conversation) operations.
+type AskSessionRepo interface {
+	Create(ctx context.Context, session *commonmodels.AskSession) error
+	AppendMessage(ctx context.Context, sessionID string, msg commonmodels.AskSessionMessage) error
+	GetByID(ctx context.Context, sessionID string) (*commonmodels.AskSession, error)
+	ListByProject(ctx context.Context, projectID string, limit int) ([]*commonmodels.AskSession, error)
+	Delete(ctx context.Context, sessionID string) error
+}
+
 // Compile-time checks: concrete repos satisfy interfaces.
 var (
 	_ ProjectRepo        = (*ProjectRepository)(nil)
@@ -90,4 +99,5 @@ var (
 	_ InsightRepo        = (*InsightRepository)(nil)
 	_ RecommendationRepo = (*RecommendationRepository)(nil)
 	_ SearchHistoryRepo  = (*SearchHistoryRepository)(nil)
+	_ AskSessionRepo     = (*AskSessionRepository)(nil)
 )

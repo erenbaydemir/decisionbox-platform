@@ -388,12 +388,44 @@ export interface SearchResponse {
 export interface AskRequest {
   question: string;
   limit?: number;
+  session_id?: string;
 }
 
 export interface AskResponse {
   answer: string;
   sources: SearchResultItem[];
   model: string;
+  session_id: string;
+}
+
+export interface AskSession {
+  id: string;
+  project_id: string;
+  user_id: string;
+  title: string;
+  messages: AskSessionMessage[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AskSessionMessage {
+  question: string;
+  answer: string;
+  sources: AskSessionSource[];
+  model: string;
+  tokens_used: number;
+  created_at: string;
+}
+
+export interface AskSessionSource {
+  id: string;
+  type: string;
+  name: string;
+  score: number;
+  severity?: string;
+  analysis_area?: string;
+  description?: string;
+  discovery_id: string;
 }
 
 export interface StandaloneInsight {
@@ -570,6 +602,14 @@ export const api = {
   // Search history
   listSearchHistory: (projectId: string, limit = 20) =>
     request<SearchHistoryEntry[]>(`/api/v1/projects/${projectId}/search/history?limit=${limit}`),
+
+  // Ask sessions (conversations)
+  listAskSessions: (projectId: string, limit = 20) =>
+    request<AskSession[]>(`/api/v1/projects/${projectId}/ask/sessions?limit=${limit}`),
+  getAskSession: (projectId: string, sessionId: string) =>
+    request<AskSession>(`/api/v1/projects/${projectId}/ask/sessions/${sessionId}`),
+  deleteAskSession: (projectId: string, sessionId: string) =>
+    request<{ status: string }>(`/api/v1/projects/${projectId}/ask/sessions/${sessionId}`, { method: 'DELETE' }),
 };
 // build trigger 20260319111744
 // coverage trigger

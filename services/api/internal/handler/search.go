@@ -25,6 +25,7 @@ type SearchHandler struct {
 	insightRepo    database.InsightRepo
 	recRepo        database.RecommendationRepo
 	historyRepo    database.SearchHistoryRepo
+	sessionRepo    database.AskSessionRepo
 	secretProvider gosecrets.Provider
 	vectorStore    vectorstore.Provider // nil if Qdrant not configured
 }
@@ -34,6 +35,7 @@ func NewSearchHandler(
 	insightRepo database.InsightRepo,
 	recRepo database.RecommendationRepo,
 	historyRepo database.SearchHistoryRepo,
+	sessionRepo database.AskSessionRepo,
 	secretProvider gosecrets.Provider,
 	vectorStore vectorstore.Provider,
 ) *SearchHandler {
@@ -42,6 +44,7 @@ func NewSearchHandler(
 		insightRepo:    insightRepo,
 		recRepo:        recRepo,
 		historyRepo:    historyRepo,
+		sessionRepo:    sessionRepo,
 		secretProvider: secretProvider,
 		vectorStore:    vectorStore,
 	}
@@ -376,14 +379,16 @@ func (h *SearchHandler) CrossProjectSearch(w http.ResponseWriter, r *http.Reques
 
 // askRequest is the request body for RAG Q&A.
 type askRequest struct {
-	Question string `json:"question"`
-	Limit    int    `json:"limit,omitempty"`
+	Question  string `json:"question"`
+	Limit     int    `json:"limit,omitempty"`
+	SessionID string `json:"session_id,omitempty"` // existing session for multi-turn; empty = new session
 }
 
 type askResponse struct {
-	Answer  string             `json:"answer"`
-	Sources []searchResultItem `json:"sources"`
-	Model   string             `json:"model"`
+	Answer    string             `json:"answer"`
+	Sources   []searchResultItem `json:"sources"`
+	Model     string             `json:"model"`
+	SessionID string             `json:"session_id"`
 }
 
 // Ask performs RAG Q&A: search + LLM synthesis.
@@ -454,9 +459,10 @@ func (h *SearchHandler) Ask(w http.ResponseWriter, r *http.Request) {
 
 	if len(sources) == 0 {
 		writeJSON(w, http.StatusOK, askResponse{
-			Answer:  "No relevant insights found for this question. Try running a discovery first or rephrasing your question.",
-			Sources: []searchResultItem{},
-			Model:   project.LLM.Model,
+			Answer:    "No relevant insights found for this question. Try running a discovery first or rephrasing your question.",
+			Sources:   []searchResultItem{},
+			Model:     project.LLM.Model,
+			SessionID: req.SessionID,
 		})
 		return
 	}
@@ -479,10 +485,25 @@ func (h *SearchHandler) Ask(w http.ResponseWriter, r *http.Request) {
 
 	prompt := fmt.Sprintf("Context from %d relevant insights/recommendations:\n\n%s\n\nQuestion: %s", len(sources), contextStr, req.Question)
 
+	// Build messages with conversation history from session for multi-turn context
+	var messages []gollm.Message
+	if req.SessionID != "" {
+		session, err := h.sessionRepo.GetByID(ctx, req.SessionID)
+		if err == nil && session != nil {
+			for _, m := range session.Messages {
+				messages = append(messages,
+					gollm.Message{Role: "user", Content: m.Question},
+					gollm.Message{Role: "assistant", Content: m.Answer},
+				)
+			}
+		}
+	}
+	messages = append(messages, gollm.Message{Role: "user", Content: prompt})
+
 	chatResp, err := llmProvider.Chat(ctx, gollm.ChatRequest{
 		Model:        project.LLM.Model,
 		SystemPrompt: systemPrompt,
-		Messages:     []gollm.Message{{Role: "user", Content: prompt}},
+		Messages:     messages,
 		MaxTokens:    2048,
 		Temperature:  0.3,
 	})
@@ -491,13 +512,49 @@ func (h *SearchHandler) Ask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Save ask history (fire and forget — background context so it survives request cancellation)
-	go h.saveAskHistory(context.Background(), projectID, req.Question, chatResp.Content, sources, project.LLM.Model, chatResp.Usage.InputTokens+chatResp.Usage.OutputTokens) //nolint:gosec // intentional: background context outlives the request
+	// Build session message
+	sessionSources := make([]commonmodels.AskSessionSource, 0, len(sources))
+	for _, s := range sources {
+		sessionSources = append(sessionSources, commonmodels.AskSessionSource{
+			ID: s.ID, Type: s.Type, Name: s.Name, Score: s.Score,
+			Severity: s.Severity, AnalysisArea: s.AnalysisArea,
+			Description: s.Description, DiscoveryID: s.DiscoveryID,
+		})
+	}
+	msg := commonmodels.AskSessionMessage{
+		Question:   req.Question,
+		Answer:     chatResp.Content,
+		Sources:    sessionSources,
+		Model:      chatResp.Model,
+		TokensUsed: chatResp.Usage.InputTokens + chatResp.Usage.OutputTokens,
+		CreatedAt:  time.Now(),
+	}
+
+	// Create or append to session
+	sessionID := req.SessionID
+	if sessionID == "" {
+		sessionID = uuid.New().String()
+		session := &commonmodels.AskSession{
+			ID:        sessionID,
+			ProjectID: projectID,
+			UserID:    "anonymous",
+			Title:     req.Question,
+			Messages:  []commonmodels.AskSessionMessage{msg},
+		}
+		if err := h.sessionRepo.Create(ctx, session); err != nil {
+			apilog.WithError(err).Warn("Failed to create ask session")
+		}
+	} else {
+		if err := h.sessionRepo.AppendMessage(ctx, sessionID, msg); err != nil {
+			apilog.WithError(err).Warn("Failed to append to ask session")
+		}
+	}
 
 	writeJSON(w, http.StatusOK, askResponse{
-		Answer:  chatResp.Content,
-		Sources: sources,
-		Model:   chatResp.Model,
+		Answer:    chatResp.Content,
+		Sources:   sources,
+		Model:     chatResp.Model,
+		SessionID: sessionID,
 	})
 }
 
@@ -536,7 +593,7 @@ func (h *SearchHandler) saveAskHistory(ctx context.Context, projectID, question,
 		Query:         question,
 		Type:          "ask",
 		ResultsCount:  len(sources),
-		AnswerSummary: truncate(answer, 500),
+		AnswerSummary: answer,
 		SourceIDs:     sourceIDs,
 		LLMModel:      model,
 		TokensUsed:    tokens,
@@ -566,6 +623,61 @@ func (h *SearchHandler) ListHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, entries)
+}
+
+// ListAskSessions returns recent ask sessions for a project.
+// GET /api/v1/projects/{id}/ask/sessions?limit=20
+func (h *SearchHandler) ListAskSessions(w http.ResponseWriter, r *http.Request) {
+	projectID := r.PathValue("id")
+	if projectID == "" {
+		writeError(w, http.StatusBadRequest, "project ID is required")
+		return
+	}
+
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+
+	sessions, err := h.sessionRepo.ListByProject(r.Context(), projectID, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list sessions")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, sessions)
+}
+
+// GetAskSession returns a full ask session with all messages.
+// GET /api/v1/projects/{id}/ask/sessions/{sessionId}
+func (h *SearchHandler) GetAskSession(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("sessionId")
+	if sessionID == "" {
+		writeError(w, http.StatusBadRequest, "session ID is required")
+		return
+	}
+
+	session, err := h.sessionRepo.GetByID(r.Context(), sessionID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "session not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, session)
+}
+
+// DeleteAskSession deletes an ask session.
+// DELETE /api/v1/projects/{id}/ask/sessions/{sessionId}
+func (h *SearchHandler) DeleteAskSession(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("sessionId")
+	if sessionID == "" {
+		writeError(w, http.StatusBadRequest, "session ID is required")
+		return
+	}
+
+	if err := h.sessionRepo.Delete(r.Context(), sessionID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete session")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 func truncate(s string, maxLen int) string {

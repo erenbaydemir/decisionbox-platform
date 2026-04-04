@@ -101,6 +101,13 @@ var schema = []struct {
 		},
 	},
 	{
+		Name: "ask_sessions",
+		Indexes: []mongo.IndexModel{
+			{Keys: bson.D{{Key: "project_id", Value: 1}, {Key: "updated_at", Value: -1}}},
+			{Keys: bson.D{{Key: "user_id", Value: 1}, {Key: "updated_at", Value: -1}}},
+		},
+	},
+	{
 		Name: "discovery_debug_logs",
 		Indexes: []mongo.IndexModel{
 			{Keys: bson.D{{Key: "project_id", Value: 1}, {Key: "timestamp", Value: -1}}},

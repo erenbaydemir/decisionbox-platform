@@ -24,8 +24,13 @@ export default function SpotlightSearch() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState(-1);
+  const [isMac, setIsMac] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setIsMac(/Mac/.test(navigator.userAgent));
+  }, []);
 
   // Load recent history when dropdown opens
   useEffect(() => {
@@ -164,7 +169,7 @@ export default function SpotlightSearch() {
           background: 'var(--db-bg-muted)', border: '1px solid var(--db-border-default)',
           borderRadius: 4, padding: '1px 5px', lineHeight: '16px', flexShrink: 0,
         }}>
-          {typeof navigator !== 'undefined' && /Mac/.test(navigator.userAgent) ? '⌘K' : 'Ctrl+K'}
+          {isMac ? '⌘K' : 'Ctrl+K'}
         </kbd>
       </div>
 

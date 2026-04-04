@@ -65,7 +65,8 @@ func New(db *database.DB, healthHandler *health.Handler, secretProvider secrets.
 	insights := handler.NewInsightsHandler(insightRepo)
 	recommendations := handler.NewRecommendationsHandler(recommendationRepo)
 	searchHistoryRepo := database.NewSearchHistoryRepository(db)
-	search := handler.NewSearchHandler(projectRepo, insightRepo, recommendationRepo, searchHistoryRepo, secretProvider, vs)
+	askSessionRepo := database.NewAskSessionRepository(db)
+	search := handler.NewSearchHandler(projectRepo, insightRepo, recommendationRepo, searchHistoryRepo, askSessionRepo, secretProvider, vs)
 
 	// RBAC helpers — wrap a handler with role-based access control.
 	// With NoAuth (default), all requests get "admin" role — all routes pass.
@@ -133,6 +134,9 @@ func New(db *database.DB, healthHandler *health.Handler, secretProvider secrets.
 	mux.HandleFunc("POST /api/v1/projects/{id}/search", withRole(viewer, search.Search))
 	mux.HandleFunc("POST /api/v1/search", withRole(viewer, search.CrossProjectSearch))
 	mux.HandleFunc("POST /api/v1/projects/{id}/ask", withRole(viewer, search.Ask))
+	mux.HandleFunc("GET /api/v1/projects/{id}/ask/sessions", withRole(viewer, search.ListAskSessions))
+	mux.HandleFunc("GET /api/v1/projects/{id}/ask/sessions/{sessionId}", withRole(viewer, search.GetAskSession))
+	mux.HandleFunc("DELETE /api/v1/projects/{id}/ask/sessions/{sessionId}", withRole(admin, search.DeleteAskSession))
 	mux.HandleFunc("GET /api/v1/projects/{id}/search/history", withRole(viewer, search.ListHistory))
 
 	// Insights & Recommendations — viewer
