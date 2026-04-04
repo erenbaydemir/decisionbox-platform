@@ -73,6 +73,13 @@ type RecommendationRepo interface {
 	UpdateDuplicate(ctx context.Context, id string, duplicateOf string, score float64) error
 }
 
+// SearchHistoryRepo abstracts search history operations.
+type SearchHistoryRepo interface {
+	Save(ctx context.Context, entry *commonmodels.SearchHistory) error
+	ListByUser(ctx context.Context, userID string, limit int) ([]*commonmodels.SearchHistory, error)
+	ListByProject(ctx context.Context, projectID string, limit int) ([]*commonmodels.SearchHistory, error)
+}
+
 // Compile-time checks: concrete repos satisfy interfaces.
 var (
 	_ ProjectRepo        = (*ProjectRepository)(nil)
@@ -82,4 +89,5 @@ var (
 	_ PricingRepo        = (*PricingRepository)(nil)
 	_ InsightRepo        = (*InsightRepository)(nil)
 	_ RecommendationRepo = (*RecommendationRepository)(nil)
+	_ SearchHistoryRepo  = (*SearchHistoryRepository)(nil)
 )

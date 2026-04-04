@@ -90,6 +90,17 @@ var schema = []struct {
 		},
 	},
 	{
+		Name: "search_history",
+		Indexes: []mongo.IndexModel{
+			{Keys: bson.D{{Key: "user_id", Value: 1}, {Key: "created_at", Value: -1}}},
+			{Keys: bson.D{{Key: "project_id", Value: 1}, {Key: "created_at", Value: -1}}},
+			{
+				Keys:    bson.D{{Key: "created_at", Value: 1}},
+				Options: options.Index().SetExpireAfterSeconds(90 * 24 * 60 * 60), // 90 day TTL
+			},
+		},
+	},
+	{
 		Name: "discovery_debug_logs",
 		Indexes: []mongo.IndexModel{
 			{Keys: bson.D{{Key: "project_id", Value: 1}, {Key: "timestamp", Value: -1}}},
