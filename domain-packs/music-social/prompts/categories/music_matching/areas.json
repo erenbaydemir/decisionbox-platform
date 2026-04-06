@@ -1,0 +1,18 @@
+[
+  {
+    "id": "chat_connection",
+    "name": "Chat & Connection Quality",
+    "description": "Messaging behavior analysis — match-to-chat conversion, message types, auto-message effectiveness, conversation depth, Instagram/phone sharing signals, chat deletion patterns, and connection quality indicators",
+    "keywords": ["chat", "message", "sent", "replied", "reacted", "auto_message", "instagram", "phone", "connection", "conversation", "quick_reply", "voice", "photo", "game"],
+    "priority": 4,
+    "prompt_file": "analysis_chat_connection.md"
+  },
+  {
+    "id": "music_discovery",
+    "name": "Music Discovery & Streaming",
+    "description": "Music engagement analysis — explore page usage, song/track clicks, streaming service playback (Spotify, Apple Music, YouTube Music), artist room participation, currently-playing behavior, playlist interactions, and music-driven social engagement",
+    "keywords": ["explore", "song", "track", "artist", "playlist", "spotify", "apple_music", "youtube_music", "currently_playing", "music", "listen", "play", "stream", "room", "sponsored"],
+    "priority": 5,
+    "prompt_file": "analysis_music_discovery.md"
+  }
+]

@@ -81,6 +81,7 @@ jobs:
           (cd libs/go-common && go test -coverprofile="$COV/go-common.txt" ./...)
           (cd domain-packs/ecommerce/go && go test -coverprofile="$COV/ecommerce.txt" ./...)
           (cd domain-packs/gaming/go && go test -coverprofile="$COV/gaming.txt" ./...)
+          (cd domain-packs/music-social/go && go test -coverprofile="$COV/music-social.txt" ./...)
           (cd domain-packs/social/go && go test -coverprofile="$COV/social.txt" ./...)
           (cd domain-packs/system-test/go && go test -coverprofile="$COV/system-test.txt" ./...)
           (cd providers/llm/claude && go test -coverprofile="$COV/llm-claude.txt" ./...)
@@ -148,6 +149,12 @@ jobs:
         with:
           version: v2.11.3
           working-directory: domain-packs/gaming/go
+
+      - name: Lint music-social domain pack
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.11.3
+          working-directory: domain-packs/music-social/go
 
       - name: Lint social domain pack
         uses: golangci/golangci-lint-action@v7

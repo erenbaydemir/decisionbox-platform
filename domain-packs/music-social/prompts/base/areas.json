@@ -1,0 +1,26 @@
+[
+  {
+    "id": "matching",
+    "name": "Matching & Engagement",
+    "description": "Swipe behavior analysis — match card views, swipe right/left ratios, match acceptance rates, super-like usage, boosted profile impact, and match quality indicators",
+    "keywords": ["match", "swipe", "like", "ignore", "card", "seen", "scroll", "right", "left", "accept", "super_like", "boost", "instant_match", "recent_match"],
+    "priority": 1,
+    "prompt_file": "analysis_matching.md"
+  },
+  {
+    "id": "retention",
+    "name": "Retention & Churn",
+    "description": "User lifecycle analysis — registration-to-first-match funnel, onboarding completion, daily/weekly active users, session frequency, churn indicators, account deletion patterns, and re-engagement signals",
+    "keywords": ["retention", "churn", "register", "onboarding", "login", "lifecycle", "inactive", "deleted", "session", "daily", "weekly", "returning", "lapsed", "cohort"],
+    "priority": 2,
+    "prompt_file": "analysis_retention.md"
+  },
+  {
+    "id": "monetization",
+    "name": "Monetization & Premium",
+    "description": "Subscription conversion analysis — premium page views, paywall conversion rates, subscription triggers, Elite feature adoption, purchase processing, retention offers, and revenue optimization",
+    "keywords": ["premium", "subscribe", "purchase", "paywall", "elite", "iap", "revenue", "subscription", "retention_bottom_sheet", "price", "payment"],
+    "priority": 3,
+    "prompt_file": "analysis_monetization.md"
+  }
+]

@@ -1,0 +1,242 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Music-Social App Profile",
+  "description": "Profile schema for music-social domain projects. Provides context to the AI agent about the app, its matching mechanics, streaming integrations, social features, monetization model, and KPI targets.",
+  "type": "object",
+  "properties": {
+    "app_info": {
+      "type": "object",
+      "title": "App Information",
+      "properties": {
+        "app_name": {
+          "type": "string",
+          "title": "App Name",
+          "description": "Name of the music-social app"
+        },
+        "app_type": {
+          "type": "string",
+          "title": "App Type",
+          "enum": ["music_matching", "music_dating", "music_social_network", "music_community"],
+          "description": "Primary app category"
+        },
+        "platforms": {
+          "type": "array",
+          "title": "Available On",
+          "items": { "type": "string", "enum": ["iOS", "Android", "Web"] }
+        },
+        "primary_markets": {
+          "type": "array",
+          "title": "Primary Markets",
+          "items": { "type": "string" },
+          "description": "Main geographic markets (e.g., 'Turkey', 'US', 'India')"
+        },
+        "languages": {
+          "type": "array",
+          "title": "Supported Languages",
+          "items": { "type": "string" },
+          "description": "Languages the app is available in"
+        },
+        "growth_stage": {
+          "type": "string",
+          "title": "Growth Stage",
+          "enum": ["pre_launch", "early_growth", "growth", "mature", "declining"],
+          "description": "Current stage of the app lifecycle"
+        },
+        "total_registered_users": {
+          "type": "integer",
+          "title": "Total Registered Users",
+          "description": "Approximate total registered users (all-time)"
+        },
+        "monthly_active_users": {
+          "type": "integer",
+          "title": "Monthly Active Users (MAU)",
+          "description": "Approximate monthly active users"
+        }
+      }
+    },
+    "streaming_integration": {
+      "type": "object",
+      "title": "Streaming Service Integration",
+      "properties": {
+        "supported_services": {
+          "type": "array",
+          "title": "Supported Streaming Services",
+          "items": {
+            "type": "string",
+            "enum": ["spotify", "apple_music", "youtube_music", "deezer", "tidal", "amazon_music", "soundcloud"]
+          },
+          "description": "Which streaming services the app integrates with"
+        },
+        "primary_service": {
+          "type": "string",
+          "title": "Primary Streaming Service",
+          "description": "The most-used streaming service by the user base"
+        },
+        "currently_playing_enabled": {
+          "type": "boolean",
+          "title": "Currently Playing Feature",
+          "description": "Whether the app detects and displays what users are currently listening to"
+        },
+        "in_app_playback": {
+          "type": "boolean",
+          "title": "In-App Playback",
+          "description": "Whether users can play music within the app (vs opening the streaming service)"
+        },
+        "free_tier_limitations": {
+          "type": "string",
+          "title": "Free Tier Limitations",
+          "description": "What features are limited for users with free streaming accounts (e.g., 'Cannot play full tracks, shuffle only')"
+        }
+      }
+    },
+    "matching_mechanics": {
+      "type": "object",
+      "title": "Matching Mechanics",
+      "properties": {
+        "matching_algorithm": {
+          "type": "string",
+          "title": "Matching Algorithm Basis",
+          "description": "What the matching is based on (e.g., 'shared listening history, genre preferences, favorite artists')"
+        },
+        "swipe_based": {
+          "type": "boolean",
+          "title": "Swipe-Based Matching",
+          "description": "Whether the app uses swipe left/right mechanics"
+        },
+        "match_sources": {
+          "type": "array",
+          "title": "Match Sources",
+          "items": { "type": "string" },
+          "description": "Types of match sources (e.g., 'instant_match', 'recent_match', 'artist_room', 'likes')"
+        },
+        "daily_swipe_limit": {
+          "type": "integer",
+          "title": "Daily Swipe Limit (Free Users)",
+          "description": "Maximum swipes per day for free users (0 = unlimited)"
+        },
+        "has_super_likes": {
+          "type": "boolean",
+          "title": "Has Super Likes"
+        },
+        "has_profile_boost": {
+          "type": "boolean",
+          "title": "Has Profile Boost"
+        },
+        "has_anonymous_matching": {
+          "type": "boolean",
+          "title": "Has Anonymous Matching Mode"
+        }
+      }
+    },
+    "social_features": {
+      "type": "object",
+      "title": "Social Features",
+      "properties": {
+        "has_chat": { "type": "boolean", "title": "Has Chat/Messaging" },
+        "chat_types": {
+          "type": "array",
+          "title": "Chat Types",
+          "items": { "type": "string", "enum": ["text", "voice", "photo", "video", "game", "quick_reply"] },
+          "description": "Types of messages users can send"
+        },
+        "has_social_posts": { "type": "boolean", "title": "Has Social Posts/Feed" },
+        "has_artist_rooms": {
+          "type": "boolean",
+          "title": "Has Artist Rooms",
+          "description": "Virtual listening rooms where users listen together"
+        },
+        "has_explore_page": {
+          "type": "boolean",
+          "title": "Has Explore/Discovery Page"
+        },
+        "has_user_profiles": { "type": "boolean", "title": "Has Public User Profiles" },
+        "has_questions": {
+          "type": "boolean",
+          "title": "Has Community Questions",
+          "description": "Q&A feature for community engagement"
+        },
+        "has_rewards": {
+          "type": "boolean",
+          "title": "Has Rewards/Gamification System"
+        }
+      }
+    },
+    "monetization": {
+      "type": "object",
+      "title": "Monetization",
+      "properties": {
+        "model": {
+          "type": "string",
+          "title": "Monetization Model",
+          "enum": ["freemium", "subscription_only", "ad_supported", "hybrid"],
+          "description": "Primary monetization approach"
+        },
+        "premium_tier_name": {
+          "type": "string",
+          "title": "Premium Tier Name",
+          "description": "Name of the premium subscription (e.g., 'Elite', 'Premium', 'Gold')"
+        },
+        "premium_features": {
+          "type": "array",
+          "title": "Premium-Exclusive Features",
+          "items": { "type": "string" },
+          "description": "Features locked behind the premium subscription (e.g., 'See who liked you', 'Unlimited swipes', 'Gender preference filter')"
+        },
+        "has_in_app_purchases": {
+          "type": "boolean",
+          "title": "Has In-App Purchases (Beyond Subscription)"
+        },
+        "has_sponsored_content": {
+          "type": "boolean",
+          "title": "Has Sponsored Content",
+          "description": "Whether the app shows sponsored tracks, playlists, or artist rooms"
+        },
+        "trial_offered": {
+          "type": "boolean",
+          "title": "Free Trial Offered"
+        }
+      }
+    },
+    "kpis": {
+      "type": "object",
+      "title": "Target KPIs",
+      "properties": {
+        "dau_mau_ratio": {
+          "type": "number",
+          "title": "DAU/MAU Ratio Target",
+          "description": "Target daily-to-monthly active user ratio (social app benchmark: 20-30%)"
+        },
+        "d1_retention": {
+          "type": "number",
+          "title": "D1 Retention Target (%)",
+          "description": "Target day-1 retention rate (social app benchmark: 25-40%)"
+        },
+        "d7_retention": {
+          "type": "number",
+          "title": "D7 Retention Target (%)",
+          "description": "Target day-7 retention rate (social app benchmark: 10-20%)"
+        },
+        "match_rate": {
+          "type": "number",
+          "title": "Match Rate Target (%)",
+          "description": "Target mutual match rate per right swipe (benchmark: 5-15%)"
+        },
+        "match_to_chat_rate": {
+          "type": "number",
+          "title": "Match-to-Chat Rate Target (%)",
+          "description": "Target percentage of matches that result in a conversation (benchmark: 30-50%)"
+        },
+        "premium_conversion_rate": {
+          "type": "number",
+          "title": "Premium Conversion Rate Target (%)",
+          "description": "Target free-to-premium conversion rate (benchmark: 2-5%)"
+        },
+        "swipes_per_session": {
+          "type": "number",
+          "title": "Swipes Per Session Target",
+          "description": "Target average swipes per session"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Music Matching App Profile Extensions",
+  "description": "Additional profile fields specific to music-taste-based matching apps with streaming service integration.",
+  "type": "object",
+  "properties": {
+    "music_matching": {
+      "type": "object",
+      "title": "Music Matching Settings",
+      "properties": {
+        "card_types": {
+          "type": "array",
+          "title": "Match Card Types",
+          "items": { "type": "string" },
+          "description": "Types of match cards shown (e.g., 'recent_track', 'recent_playlist', 'sponsored_playlist', 'instant_playlist')"
+        },
+        "matching_signals": {
+          "type": "array",
+          "title": "Matching Signals",
+          "items": { "type": "string" },
+          "description": "What data points are used for matching (e.g., 'top_artists', 'recently_played', 'genres', 'currently_playing')"
+        },
+        "match_card_detail_fields": {
+          "type": "array",
+          "title": "Match Card Detail Fields",
+          "items": { "type": "string" },
+          "description": "What information is shown on match cards (e.g., 'common_artists', 'common_tracks', 'music_compatibility_score')"
+        },
+        "gender_preference_options": {
+          "type": "array",
+          "title": "Gender Preference Options",
+          "items": { "type": "string" },
+          "description": "Available gender preference settings (e.g., 'male', 'female', 'non_binary', 'all')"
+        },
+        "age_range_filter": {
+          "type": "boolean",
+          "title": "Has Age Range Filter"
+        },
+        "location_filter": {
+          "type": "boolean",
+          "title": "Has Location Filter"
+        }
+      }
+    },
+    "streaming_details": {
+      "type": "object",
+      "title": "Streaming Service Details",
+      "properties": {
+        "spotify_share": {
+          "type": "number",
+          "title": "Spotify User Share (%)",
+          "description": "Percentage of users connected via Spotify (any tier)"
+        },
+        "apple_music_share": {
+          "type": "number",
+          "title": "Apple Music User Share (%)",
+          "description": "Percentage of users connected via Apple Music"
+        },
+        "youtube_music_share": {
+          "type": "number",
+          "title": "YouTube Music User Share (%)",
+          "description": "Percentage of users connected via YouTube Music"
+        },
+        "premium_streaming_share": {
+          "type": "number",
+          "title": "Premium Streaming Share (%)",
+          "description": "Percentage of users with a premium streaming subscription"
+        },
+        "listening_data_refresh_frequency": {
+          "type": "string",
+          "title": "Listening Data Refresh",
+          "enum": ["real_time", "hourly", "daily", "weekly"],
+          "description": "How often the user's listening data is synced from the streaming service"
+        }
+      }
+    },
+    "artist_rooms": {
+      "type": "object",
+      "title": "Artist Rooms",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Artist Rooms Enabled"
+        },
+        "max_participants": {
+          "type": "integer",
+          "title": "Max Participants Per Room"
+        },
+        "has_sponsored_rooms": {
+          "type": "boolean",
+          "title": "Has Sponsored Artist Rooms"
+        },
+        "room_matching_enabled": {
+          "type": "boolean",
+          "title": "In-Room Matching Enabled",
+          "description": "Whether users can match with others in the same artist room"
+        }
+      }
+    },
+    "rewards_system": {
+      "type": "object",
+      "title": "Rewards & Gamification",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Rewards System Enabled"
+        },
+        "mission_types": {
+          "type": "array",
+          "title": "Mission Types",
+          "items": { "type": "string" },
+          "description": "Types of reward missions (e.g., 'listen_to_song', 'like_artist', 'like_playlist', 'complete_profile')"
+        },
+        "has_store": {
+          "type": "boolean",
+          "title": "Has Rewards Store",
+          "description": "Whether earned rewards can be spent in a store"
+        },
+        "reward_types": {
+          "type": "array",
+          "title": "Reward Types",
+          "items": { "type": "string" },
+          "description": "What users can earn/redeem (e.g., 'extra_swipes', 'profile_boost', 'super_likes', 'badges')"
+        }
+      }
+    }
+  }
+}
