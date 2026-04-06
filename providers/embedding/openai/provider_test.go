@@ -263,6 +263,27 @@ func TestEmbedMismatchedCount(t *testing.T) {
 	}
 }
 
+func TestEmbedDuplicateIndex(t *testing.T) {
+	server := newMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(embeddingResponse{
+			Data: []embeddingData{
+				{Index: 0, Embedding: make([]float64, 3)},
+				{Index: 0, Embedding: make([]float64, 3)},
+			},
+		})
+	})
+	defer server.Close()
+
+	p := newProvider("test-key", "text-embedding-3-small", server.URL, 1536)
+	_, err := p.Embed(context.Background(), []string{"text1", "text2"})
+	if err == nil {
+		t.Fatal("expected error for duplicate index")
+	}
+	if !strings.Contains(err.Error(), "duplicate index") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 func TestValidate(t *testing.T) {
 	server := newMockServer(t, func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(embeddingResponse{

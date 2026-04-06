@@ -105,13 +105,36 @@ func newProvider(model string, dims int, endpoint string, auth tokenProvider) *p
 	}
 }
 
+// maxBatchSize is the Vertex AI predict API limit per request.
+const maxBatchSize = 250
+
 // Embed generates vector embeddings for the given texts via Vertex AI predict API.
-// Supports up to 250 texts per request (Vertex AI limit).
+// Automatically chunks inputs exceeding the 250-text API limit.
 func (p *provider) Embed(ctx context.Context, texts []string) ([][]float64, error) {
 	if len(texts) == 0 {
 		return nil, nil
 	}
 
+	if len(texts) <= maxBatchSize {
+		return p.embedBatch(ctx, texts)
+	}
+
+	result := make([][]float64, len(texts))
+	for start := 0; start < len(texts); start += maxBatchSize {
+		end := start + maxBatchSize
+		if end > len(texts) {
+			end = len(texts)
+		}
+		chunk, err := p.embedBatch(ctx, texts[start:end])
+		if err != nil {
+			return nil, err
+		}
+		copy(result[start:end], chunk)
+	}
+	return result, nil
+}
+
+func (p *provider) embedBatch(ctx context.Context, texts []string) ([][]float64, error) {
 	instances := make([]instance, len(texts))
 	for i, t := range texts {
 		instances[i] = instance{Content: t}

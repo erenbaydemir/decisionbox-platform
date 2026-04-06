@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	goembedding "github.com/decisionbox-io/decisionbox/libs/go-common/embedding"
@@ -127,7 +128,7 @@ func (p *provider) Embed(ctx context.Context, texts []string) ([][]float64, erro
 	}
 
 	url := fmt.Sprintf("%s/openai/deployments/%s/embeddings?api-version=%s",
-		p.endpoint, p.deployment, p.apiVersion)
+		strings.TrimRight(p.endpoint, "/"), p.deployment, p.apiVersion)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
@@ -165,10 +166,15 @@ func (p *provider) Embed(ctx context.Context, texts []string) ([][]float64, erro
 	}
 
 	result := make([][]float64, len(texts))
+	seen := make([]bool, len(texts))
 	for _, d := range embResp.Data {
 		if d.Index < 0 || d.Index >= len(texts) {
 			return nil, fmt.Errorf("azure-openai embedding: invalid index %d in response", d.Index)
 		}
+		if seen[d.Index] {
+			return nil, fmt.Errorf("azure-openai embedding: duplicate index %d in response", d.Index)
+		}
+		seen[d.Index] = true
 		result[d.Index] = d.Embedding
 	}
 

@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	goembedding "github.com/decisionbox-io/decisionbox/libs/go-common/embedding"
@@ -104,7 +105,7 @@ func (p *provider) Embed(ctx context.Context, texts []string) ([][]float64, erro
 		return nil, fmt.Errorf("openai embedding: failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/embeddings", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(p.baseURL, "/")+"/embeddings", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("openai embedding: failed to create request: %w", err)
 	}
@@ -140,10 +141,15 @@ func (p *provider) Embed(ctx context.Context, texts []string) ([][]float64, erro
 	}
 
 	result := make([][]float64, len(texts))
+	seen := make([]bool, len(texts))
 	for _, d := range embResp.Data {
 		if d.Index < 0 || d.Index >= len(texts) {
 			return nil, fmt.Errorf("openai embedding: invalid index %d in response", d.Index)
 		}
+		if seen[d.Index] {
+			return nil, fmt.Errorf("openai embedding: duplicate index %d in response", d.Index)
+		}
+		seen[d.Index] = true
 		result[d.Index] = d.Embedding
 	}
 

@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	goembedding "github.com/decisionbox-io/decisionbox/libs/go-common/embedding"
@@ -102,13 +103,36 @@ func newProvider(apiKey, model, inputType, baseURL string, dims int) *provider {
 	}
 }
 
+// maxBatchSize is the Voyage AI API limit per request.
+const maxBatchSize = 128
+
 // Embed generates vector embeddings for the given texts via Voyage AI.
-// Supports up to 128 texts per request.
+// Automatically chunks inputs exceeding the 128-text API limit.
 func (p *provider) Embed(ctx context.Context, texts []string) ([][]float64, error) {
 	if len(texts) == 0 {
 		return nil, nil
 	}
 
+	if len(texts) <= maxBatchSize {
+		return p.embedBatch(ctx, texts)
+	}
+
+	result := make([][]float64, len(texts))
+	for start := 0; start < len(texts); start += maxBatchSize {
+		end := start + maxBatchSize
+		if end > len(texts) {
+			end = len(texts)
+		}
+		chunk, err := p.embedBatch(ctx, texts[start:end])
+		if err != nil {
+			return nil, err
+		}
+		copy(result[start:end], chunk)
+	}
+	return result, nil
+}
+
+func (p *provider) embedBatch(ctx context.Context, texts []string) ([][]float64, error) {
 	reqBody := embeddingRequest{
 		Model:      p.model,
 		Input:      texts,
@@ -123,7 +147,7 @@ func (p *provider) Embed(ctx context.Context, texts []string) ([][]float64, erro
 		return nil, fmt.Errorf("voyage embedding: failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/embeddings", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(p.baseURL, "/")+"/embeddings", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("voyage embedding: failed to create request: %w", err)
 	}
@@ -159,10 +183,15 @@ func (p *provider) Embed(ctx context.Context, texts []string) ([][]float64, erro
 	}
 
 	result := make([][]float64, len(texts))
+	seen := make([]bool, len(texts))
 	for _, d := range embResp.Data {
 		if d.Index < 0 || d.Index >= len(texts) {
 			return nil, fmt.Errorf("voyage embedding: invalid index %d in response", d.Index)
 		}
+		if seen[d.Index] {
+			return nil, fmt.Errorf("voyage embedding: duplicate index %d in response", d.Index)
+		}
+		seen[d.Index] = true
 		result[d.Index] = d.Embedding
 	}
 

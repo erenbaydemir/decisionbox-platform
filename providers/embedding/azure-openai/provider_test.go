@@ -303,6 +303,27 @@ func TestEmbedInvalidIndex(t *testing.T) {
 	}
 }
 
+func TestEmbedDuplicateIndex(t *testing.T) {
+	server := newMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(embeddingResponse{
+			Data: []embeddingData{
+				{Index: 0, Embedding: make([]float64, 3)},
+				{Index: 0, Embedding: make([]float64, 3)},
+			},
+		})
+	})
+	defer server.Close()
+
+	p := newProvider(server.URL, "test-key", "my-deployment", "text-embedding-3-small", defaultAPIVersion, 1536)
+	_, err := p.Embed(context.Background(), []string{"text1", "text2"})
+	if err == nil {
+		t.Fatal("expected error for duplicate index")
+	}
+	if !strings.Contains(err.Error(), "duplicate index") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 func TestValidate(t *testing.T) {
 	server := newMockServer(t, func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(embeddingResponse{
@@ -374,6 +395,26 @@ func TestCustomAPIVersion(t *testing.T) {
 	defer server.Close()
 
 	p := newProvider(server.URL, "test-key", "my-deployment", "text-embedding-3-small", "2025-01-01", 1536)
+	_, err := p.Embed(context.Background(), []string{"test"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestEndpointTrailingSlash(t *testing.T) {
+	server := newMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+		// Should NOT have double slash
+		if strings.Contains(r.URL.Path, "//") {
+			t.Errorf("URL path contains double slash: %s", r.URL.Path)
+		}
+		json.NewEncoder(w).Encode(embeddingResponse{
+			Data: []embeddingData{{Index: 0, Embedding: make([]float64, 1536)}},
+		})
+	})
+	defer server.Close()
+
+	// Endpoint with trailing slash
+	p := newProvider(server.URL+"/", "test-key", "my-deployment", "text-embedding-3-small", defaultAPIVersion, 1536)
 	_, err := p.Embed(context.Background(), []string{"test"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

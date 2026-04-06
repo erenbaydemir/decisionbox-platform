@@ -315,6 +315,43 @@ func TestDimensions(t *testing.T) {
 	}
 }
 
+func TestEmbedAutoChunking(t *testing.T) {
+	callCount := 0
+	server := newMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		var req predictRequest
+		json.NewDecoder(r.Body).Decode(&req)
+		if len(req.Instances) > maxBatchSize {
+			t.Errorf("chunk %d: got %d instances, exceeds max %d", callCount, len(req.Instances), maxBatchSize)
+		}
+
+		preds := make([]prediction, len(req.Instances))
+		for i := range req.Instances {
+			preds[i] = prediction{Embeddings: embeddingResult{Values: make([]float64, 3)}}
+		}
+		json.NewEncoder(w).Encode(predictResponse{Predictions: preds})
+	})
+	defer server.Close()
+
+	p := newProvider("text-embedding-005", 768, server.URL, &mockAuth{tok: "test-token"})
+
+	// 300 texts should be split into 2 chunks (250 + 50)
+	texts := make([]string, 300)
+	for i := range texts {
+		texts[i] = "text"
+	}
+	result, err := p.Embed(context.Background(), texts)
+	if err != nil {
+		t.Fatalf("Embed failed: %v", err)
+	}
+	if len(result) != 300 {
+		t.Fatalf("expected 300 results, got %d", len(result))
+	}
+	if callCount != 2 {
+		t.Errorf("expected 2 API calls (250+50), got %d", callCount)
+	}
+}
+
 // Verify provider implements the interface at compile time.
 var _ goembedding.Provider = (*provider)(nil)
 

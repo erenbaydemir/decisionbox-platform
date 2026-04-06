@@ -299,6 +299,27 @@ func TestEmbedInvalidIndex(t *testing.T) {
 	}
 }
 
+func TestEmbedDuplicateIndex(t *testing.T) {
+	server := newMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(embeddingResponse{
+			Data: []embeddingData{
+				{Index: 0, Embedding: make([]float64, 3)},
+				{Index: 0, Embedding: make([]float64, 3)},
+			},
+		})
+	})
+	defer server.Close()
+
+	p := newProvider("test-key", "voyage-3", "", server.URL, 1024)
+	_, err := p.Embed(context.Background(), []string{"text1", "text2"})
+	if err == nil {
+		t.Fatal("expected error for duplicate index")
+	}
+	if !strings.Contains(err.Error(), "duplicate index") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 func TestValidate(t *testing.T) {
 	server := newMockServer(t, func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(embeddingResponse{
@@ -350,6 +371,43 @@ func TestDimensions(t *testing.T) {
 		if p.Dimensions() != tt.dims {
 			t.Errorf("model %s: expected %d dims, got %d", tt.model, tt.dims, p.Dimensions())
 		}
+	}
+}
+
+func TestEmbedAutoChunking(t *testing.T) {
+	callCount := 0
+	server := newMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		var req embeddingRequest
+		json.NewDecoder(r.Body).Decode(&req)
+		if len(req.Input) > maxBatchSize {
+			t.Errorf("chunk %d: got %d inputs, exceeds max %d", callCount, len(req.Input), maxBatchSize)
+		}
+
+		data := make([]embeddingData, len(req.Input))
+		for i := range req.Input {
+			data[i] = embeddingData{Index: i, Embedding: make([]float64, 3)}
+		}
+		json.NewEncoder(w).Encode(embeddingResponse{Data: data})
+	})
+	defer server.Close()
+
+	p := newProvider("test-key", "voyage-3", "", server.URL, 1024)
+
+	// 200 texts should be split into 2 chunks (128 + 72)
+	texts := make([]string, 200)
+	for i := range texts {
+		texts[i] = "text"
+	}
+	result, err := p.Embed(context.Background(), texts)
+	if err != nil {
+		t.Fatalf("Embed failed: %v", err)
+	}
+	if len(result) != 200 {
+		t.Fatalf("expected 200 results, got %d", len(result))
+	}
+	if callCount != 2 {
+		t.Errorf("expected 2 API calls (128+72), got %d", callCount)
 	}
 }
 
