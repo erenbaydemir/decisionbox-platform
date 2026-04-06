@@ -40,17 +40,41 @@ Execute SQL queries to analyze the data. For each query, respond with JSON:
 11. **Handle JSON event parameters**: Event data may contain JSON-encoded parameters. Use JSON extraction functions (e.g., `JSON_EXTRACT_SCALAR` in BigQuery) to parse structured event parameters.
 12. **Join users and events carefully**: The users table and events table may use different identifier columns. Discover the join key from the schema before writing JOINs.
 
+### Error Handling — CRITICAL
+
+**You MUST follow these rules when a query fails. Every failed query wastes precious exploration budget.**
+
+- **On ANY error (permission denied, access denied, timeout, syntax error): do NOT retry the same query or a variation of it.** Immediately move on to a completely different query that extracts different information.
+- **Never query INFORMATION_SCHEMA** (`INFORMATION_SCHEMA.TABLES`, `INFORMATION_SCHEMA.COLUMNS`, `INFORMATION_SCHEMA.TABLE_OPTIONS`, etc.) unless you have already confirmed it works. Many datasets — especially data shares, authorized views, and cross-project datasets — do not grant access to INFORMATION_SCHEMA. Prefer querying the actual tables directly.
+- **If a table reference format fails** (e.g., `dataset.table` returns an error), try the format `project.dataset.table` ONCE. If that also fails, the issue is permissions — not syntax. Stop trying that table and work with whichever tables ARE accessible.
+- **Maximum 2 failed queries total** for schema/access discovery. After 2 errors, you MUST proceed with whatever tables and columns you can access. Use {{SCHEMA_INFO}} as your schema reference and write analytical queries against the accessible tables.
+- **If you cannot access any tables at all**, report this immediately with `{"done": true, "summary": "Unable to access data tables — all queries returned permission errors."}` instead of burning through your entire budget on retries.
+- **A query that returns data = confirmed access.** Once a query succeeds on a table, you know the table reference format works. Reuse that exact format for all subsequent queries on that table.
+
 ## Exploration Strategy
 
 Follow this strategy for thorough data exploration:
 
-### Phase A: Understand the app landscape (first 10-15% of budget)
-- **Discover the schema**: What tables exist? What columns do they have? What are the data types? Identify key columns for timestamps, user identifiers, event types, and event parameters.
-- **Check data freshness**: What is the most recent date in the data? How far back does it go?
-- **Get total user counts**: Unique active users per day, weekly/monthly active users, total registered users — scoped to the actual date range in the data
-- **Understand event distribution**: What types of user events are recorded? How many of each type? What are the top 20-30 event names?
-- **Get baseline metrics**: daily active users, events per user, match rate, swipe volume
-- **Understand user demographics**: Distribution by country, gender, streaming service, platform (iOS/Android)
+### Phase A: Establish access and understand the landscape (first 10-15% of budget)
+
+**Step 1 — Validate table access (1-2 queries max):**
+Start by querying the actual data tables listed in {{SCHEMA_INFO}} with a simple query. If {{SCHEMA_INFO}} already provides column names and types, skip straight to Step 2.
+
+```sql
+SELECT * FROM `{{DATASET}}.table_name` LIMIT 5
+```
+
+If this fails, try with the project ID prefix ONCE: `` `project.dataset.table_name` ``. If that also fails, move on to the next table. Do NOT try INFORMATION_SCHEMA, do NOT try other syntax variations. After at most 2 failed queries, work with whatever you have.
+
+**Step 2 — Data freshness and baseline (2-3 queries):**
+Once you have confirmed which tables are accessible and know the column names (from {{SCHEMA_INFO}} or a LIMIT 5 sample):
+- Get the date range, total event count, and unique user count from the events table
+- Get the event type distribution (GROUP BY event_name ORDER BY count DESC)
+- Get user demographics from the users table (country, gender, streaming service distribution)
+
+**Step 3 — Baseline metrics (1-2 queries):**
+- Daily active users trend
+- Overall matching funnel counts (card views, swipes, matches, chats)
 
 ### Phase B: Deep-dive into each analysis area (60-70% of budget)
 - For each analysis area, run 3-5 queries that progress from broad to specific
@@ -94,7 +118,13 @@ After thorough exploration, respond with:
 
 > Date filters below use relative date logic. In your first query, determine the actual date range — then use that as the reference point for all subsequent queries. Do NOT assume the data is current.
 
-**Data Freshness and App Overview** (run this first — adapt column names to your schema):
+**Validate Access and Discover Schema** (run this FIRST — never use INFORMATION_SCHEMA):
+```sql
+-- See actual columns, data types, and sample values
+SELECT * FROM `{{DATASET}}.events` LIMIT 5
+```
+
+**Data Freshness and App Overview**:
 ```sql
 -- Identify the date range, user base, and event volume
 SELECT
@@ -106,7 +136,7 @@ FROM `{{DATASET}}.events`
 {{FILTER}}
 ```
 
-**Event Type Breakdown** (understand what actions are recorded):
+**Event Type Breakdown**:
 ```sql
 -- Discover all distinct event types and their volumes
 SELECT
@@ -119,7 +149,7 @@ GROUP BY event_name
 ORDER BY event_count DESC
 ```
 
-**Matching Funnel** (adapt event names to what the data actually uses):
+**Matching Funnel**:
 ```sql
 -- Track the funnel: card seen -> swipe right -> match accepted -> chat started
 SELECT
@@ -133,7 +163,6 @@ FROM `{{DATASET}}.events`
 
 **User Demographics**:
 ```sql
--- Understand the user base composition
 SELECT
   country,
   gender,
@@ -168,4 +197,4 @@ FROM `{{DATASET}}.events`
 {{FILTER}}
 ```
 
-Let's begin! Start by understanding the app landscape — discover the schema, check data freshness, user counts, event distribution, and baseline metrics before diving into specific analysis areas.
+Let's begin! Start by validating table access with a simple LIMIT query, then move quickly into data freshness, event distribution, and baseline metrics. Do NOT waste queries on INFORMATION_SCHEMA or retrying failed access patterns.
