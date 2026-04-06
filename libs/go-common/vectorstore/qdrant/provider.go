@@ -166,6 +166,10 @@ func (p *Provider) Search(ctx context.Context, vector []float64, opts vectorstor
 
 	scored, err := p.client.Query(ctx, query)
 	if err != nil {
+		// Return empty results if collection doesn't exist yet (no vectors indexed)
+		if strings.Contains(err.Error(), "Not found") || strings.Contains(err.Error(), "doesn't exist") {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("qdrant: search failed in %q: %w", name, err)
 	}
 
@@ -210,6 +214,9 @@ func (p *Provider) FindDuplicates(ctx context.Context, vector []float64, project
 		WithPayload:    pb.NewWithPayload(true),
 	})
 	if err != nil {
+		if strings.Contains(err.Error(), "Not found") || strings.Contains(err.Error(), "doesn't exist") {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("qdrant: duplicate search failed in %q: %w", name, err)
 	}
 

@@ -54,18 +54,42 @@ type Event struct {
 	Type        EventType     `json:"type"`
 	ProjectID   string        `json:"project_id"`
 	ProjectName string        `json:"project_name"`
+	Domain      string        `json:"domain,omitempty"`
+	Category    string        `json:"category,omitempty"`
 	RunID       string        `json:"run_id"`
+	DiscoveryID string        `json:"discovery_id,omitempty"`
 	Duration    time.Duration `json:"duration"`
 	Timestamp   time.Time     `json:"timestamp"`
 
 	// Populated on discovery_completed
-	InsightsTotal    int `json:"insights_total,omitempty"`
-	InsightsCritical int `json:"insights_critical,omitempty"`
-	InsightsHigh     int `json:"insights_high,omitempty"`
-	Recommendations  int `json:"recommendations,omitempty"`
+	InsightsTotal    int            `json:"insights_total,omitempty"`
+	InsightsCritical int            `json:"insights_critical,omitempty"`
+	InsightsHigh     int            `json:"insights_high,omitempty"`
+	InsightsMedium   int            `json:"insights_medium,omitempty"`
+	Recommendations  int            `json:"recommendations,omitempty"`
+	QueriesExecuted  int            `json:"queries_executed,omitempty"`
+	TopInsights      []InsightBrief `json:"top_insights,omitempty"`
+	TopRecommendations []RecommendationBrief `json:"top_recommendations,omitempty"`
 
 	// Populated on discovery_failed
 	Error string `json:"error,omitempty"`
+}
+
+// InsightBrief is a summary of a single insight for notifications.
+type InsightBrief struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Severity      string `json:"severity"`
+	AnalysisArea  string `json:"analysis_area"`
+	AffectedCount int    `json:"affected_count"`
+}
+
+// RecommendationBrief is a summary of a single recommendation for notifications.
+type RecommendationBrief struct {
+	ID                   string `json:"id"`
+	Title                string `json:"title"`
+	Metric               string `json:"metric"`
+	EstimatedImprovement string `json:"estimated_improvement"`
 }
 
 // EventType identifies the kind of notification event.

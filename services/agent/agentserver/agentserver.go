@@ -602,16 +602,23 @@ func runDiscovery(cfg *config.Config, projectID string, runID string, selectedAr
 
 	// Notify registered channels (async, non-fatal)
 	notify.NotifyAll(ctx, notify.Event{
-		Type:             notify.EventDiscoveryCompleted,
-		ProjectID:        projectID,
-		ProjectName:      project.Name,
-		RunID:            runID,
-		Duration:         result.Duration,
-		InsightsTotal:    len(result.Insights),
-		InsightsCritical: countBySeverity(result.Insights, "critical"),
-		InsightsHigh:     countBySeverity(result.Insights, "high"),
-		Recommendations:  len(result.Recommendations),
-		Timestamp:        time.Now(),
+		Type:               notify.EventDiscoveryCompleted,
+		ProjectID:          projectID,
+		ProjectName:        project.Name,
+		Domain:             project.Domain,
+		Category:           project.Category,
+		RunID:              runID,
+		DiscoveryID:        result.ID,
+		Duration:           result.Duration,
+		InsightsTotal:      len(result.Insights),
+		InsightsCritical:   countBySeverity(result.Insights, "critical"),
+		InsightsHigh:       countBySeverity(result.Insights, "high"),
+		InsightsMedium:     countBySeverity(result.Insights, "medium"),
+		Recommendations:    len(result.Recommendations),
+		QueriesExecuted:    result.TotalSteps,
+		TopInsights:        topInsightBriefs(result.Insights, 5),
+		TopRecommendations: topRecommendationBriefs(result.Recommendations, 3),
+		Timestamp:          time.Now(),
 	})
 
 	applog.WithFields(applog.Fields{
@@ -634,4 +641,48 @@ func countBySeverity(insights []models.Insight, severity string) int {
 		}
 	}
 	return count
+}
+
+func topInsightBriefs(insights []models.Insight, limit int) []notify.InsightBrief {
+	// Sort by severity: critical > high > medium > low
+	sevOrder := map[string]int{"critical": 4, "high": 3, "medium": 2, "low": 1}
+	sorted := make([]models.Insight, len(insights))
+	copy(sorted, insights)
+	for i := 0; i < len(sorted); i++ {
+		for j := i + 1; j < len(sorted); j++ {
+			if sevOrder[sorted[j].Severity] > sevOrder[sorted[i].Severity] {
+				sorted[i], sorted[j] = sorted[j], sorted[i]
+			}
+		}
+	}
+	if len(sorted) > limit {
+		sorted = sorted[:limit]
+	}
+	briefs := make([]notify.InsightBrief, len(sorted))
+	for i, ins := range sorted {
+		briefs[i] = notify.InsightBrief{
+			ID:            ins.ID,
+			Name:          ins.Name,
+			Severity:      ins.Severity,
+			AnalysisArea:  ins.AnalysisArea,
+			AffectedCount: ins.AffectedCount,
+		}
+	}
+	return briefs
+}
+
+func topRecommendationBriefs(recs []models.Recommendation, limit int) []notify.RecommendationBrief {
+	if len(recs) > limit {
+		recs = recs[:limit]
+	}
+	briefs := make([]notify.RecommendationBrief, len(recs))
+	for i, rec := range recs {
+		briefs[i] = notify.RecommendationBrief{
+			ID:                   rec.ID,
+			Title:                rec.Title,
+			Metric:               rec.ExpectedImpact.Metric,
+			EstimatedImprovement: rec.ExpectedImpact.EstimatedImprovement,
+		}
+	}
+	return briefs
 }

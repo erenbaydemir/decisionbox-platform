@@ -26,7 +26,7 @@ export default function SearchPage() {
 
   useEffect(() => {
     api.getProject(id).then(p => setProject({ name: p.name })).catch(() => {});
-    api.listSearchHistory(id, 10).then(setHistory).catch(() => {});
+    api.listSearchHistory(id, 10).then(h => setHistory(h || [])).catch(() => {});
   }, [id]);
 
   const runSearch = useCallback(async (q: string) => {
@@ -43,7 +43,7 @@ export default function SearchPage() {
       setResults(resp.results);
       setEmbeddingModel(resp.embedding_model);
       // Refresh history
-      api.listSearchHistory(id, 10).then(setHistory).catch(() => {});
+      api.listSearchHistory(id, 10).then(h => setHistory(h || [])).catch(() => {});
     } catch (err) {
       setResults([]);
       setEmbeddingModel('');

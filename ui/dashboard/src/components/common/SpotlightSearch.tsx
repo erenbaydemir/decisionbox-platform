@@ -36,7 +36,7 @@ export default function SpotlightSearch() {
   // Load recent history when dropdown opens
   useEffect(() => {
     if (!open || !projectId) return;
-    api.listSearchHistory(projectId, 8).then(setHistory).catch(() => {});
+    api.listSearchHistory(projectId, 8).then(h => setHistory(h || [])).catch(() => {});
   }, [open, projectId]);
 
   // Debounced semantic search
@@ -48,7 +48,7 @@ export default function SpotlightSearch() {
     const timer = setTimeout(() => {
       setLoading(true);
       api.searchInsights(projectId, { query: query.trim(), limit: 6 })
-        .then(resp => { setResults(resp.results); setSelectedIdx(-1); })
+        .then(resp => { setResults(resp?.results || []); setSelectedIdx(-1); })
         .catch(() => setResults([]))
         .finally(() => setLoading(false));
     }, 300);

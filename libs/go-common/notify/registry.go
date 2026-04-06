@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"sync"
+	"time"
 )
 
 var (
@@ -47,9 +48,11 @@ func RegisteredChannels() []ChannelMeta {
 	return metas
 }
 
-// NotifyAll dispatches an event to all registered channels asynchronously.
-// Errors are logged but never block the caller — notification failures
-// must not affect discovery completion.
+// NotifyAll dispatches an event to all registered channels concurrently
+// and waits for them to complete (up to 30 seconds). This ensures
+// notifications are sent before short-lived processes (like the agent
+// subprocess) exit. Errors are logged but never returned — notification
+// failures must not affect discovery completion.
 func NotifyAll(ctx context.Context, event Event) {
 	registryMu.RLock()
 	chs := make([]Channel, 0, len(channels))
@@ -62,11 +65,28 @@ func NotifyAll(ctx context.Context, event Event) {
 		return
 	}
 
+	var wg sync.WaitGroup
+	wg.Add(len(chs))
+
 	for _, ch := range chs {
 		go func(c Channel) {
+			defer wg.Done()
 			if err := c.Notify(ctx, event); err != nil {
 				log.Printf("[notify] %s: %v", c.Type(), err)
 			}
 		}(ch)
+	}
+
+	// Wait with timeout so we don't block forever on a hung channel
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		log.Printf("[notify] timed out waiting for channels to complete")
 	}
 }
