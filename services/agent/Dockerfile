@@ -24,6 +24,7 @@ COPY providers/secrets/azure/go.mod providers/secrets/azure/go.sum providers/sec
 COPY domain-packs/ecommerce/go/go.mod domain-packs/ecommerce/go/
 COPY domain-packs/gaming/go/go.mod domain-packs/gaming/go/
 COPY domain-packs/music-social/go/go.mod domain-packs/music-social/go/
+COPY domain-packs/real-estate/go/go.mod domain-packs/real-estate/go/
 COPY domain-packs/social/go/go.mod domain-packs/social/go/
 COPY domain-packs/system-test/go/go.mod domain-packs/system-test/go/
 COPY services/agent/go.mod services/agent/go.sum services/agent/

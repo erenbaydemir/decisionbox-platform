@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Real Estate CRM Project Profile",
+  "type": "object",
+  "properties": {
+    "business_info": {
+      "type": "object",
+      "title": "Organization",
+      "properties": {
+        "brand_name": {
+          "type": "string",
+          "title": "Brand / Franchise Name",
+          "description": "The brand or franchise name (e.g., RE/MAX Turkey, Coldwell Banker)"
+        },
+        "country": {
+          "type": "string",
+          "title": "Primary Country",
+          "enum": ["turkey", "portugal", "italy", "spain", "romania", "other"],
+          "description": "Primary operating country"
+        },
+        "office_count": {
+          "type": "integer",
+          "title": "Number of Offices",
+          "description": "Total offices in the organization"
+        },
+        "agent_count": {
+          "type": "integer",
+          "title": "Number of Active Agents",
+          "description": "Number of agents actively using the platform"
+        }
+      }
+    },
+    "business_model": {
+      "type": "object",
+      "title": "Business Model",
+      "properties": {
+        "primary_focus": {
+          "type": "string",
+          "title": "Primary Focus",
+          "enum": ["sales", "rentals", "both"],
+          "description": "Primary transaction type"
+        },
+        "lead_sources": {
+          "type": "array",
+          "title": "Lead Sources",
+          "items": { "type": "string" },
+          "description": "Primary lead sources used (e.g., portal crawling, referrals, walk-ins)"
+        },
+        "commission_structure": {
+          "type": "string",
+          "title": "Commission Structure",
+          "description": "How commissions are structured (e.g., split, tiered, flat)"
+        }
+      }
+    },
+    "kpis": {
+      "type": "object",
+      "title": "Target KPIs",
+      "properties": {
+        "target_response_time_minutes": {
+          "type": "integer",
+          "title": "Target Response Time (minutes)",
+          "description": "Target time to first contact with a new lead"
+        },
+        "target_conversion_rate": {
+          "type": "number",
+          "title": "Target Lead-to-Contract Rate (%)",
+          "description": "Target conversion rate from lead to signed contract"
+        },
+        "avg_transaction_value": {
+          "type": "number",
+          "title": "Average Transaction Value",
+          "description": "Average transaction price in local currency"
+        }
+      }
+    }
+  }
+}

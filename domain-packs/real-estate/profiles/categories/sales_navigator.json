@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Sales Navigator Profile Extensions",
+  "type": "object",
+  "properties": {
+    "platform_usage": {
+      "type": "object",
+      "title": "Platform Usage",
+      "properties": {
+        "uses_valuations": {
+          "type": "boolean",
+          "title": "Uses Valuation Feature",
+          "description": "Whether the organization actively uses property valuations"
+        },
+        "primary_communication_channel": {
+          "type": "string",
+          "title": "Primary Communication Channel",
+          "enum": ["whatsapp", "sms", "phone", "email"],
+          "description": "Primary channel agents use to communicate with leads"
+        },
+        "uses_buyer_matching": {
+          "type": "boolean",
+          "title": "Uses Buyer Matching",
+          "description": "Whether agents actively match listings to buyer leads"
+        }
+      }
+    }
+  }
+}

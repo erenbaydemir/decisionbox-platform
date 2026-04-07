@@ -61,3 +61,7 @@ values-secrets.yaml
 # Claude
 .claude/
 test-prompts/
+
+# POC
+poc/
+poc-logs/
