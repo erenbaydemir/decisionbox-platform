@@ -1,0 +1,50 @@
+[
+  {
+    "id": "lead_conversion",
+    "name": "Lead Pipeline Conversion & Bottlenecks",
+    "description": "Analyze the lead conversion funnel from prospect to contract — identify stage-to-stage drop-offs, conversion rates by lead type (seller vs buyer), source effectiveness, archived lead patterns, and time-in-stage bottlenecks",
+    "keywords": ["lead", "leads", "stage_id", "lead_type", "prospect_at", "contacted_at", "qualified_at", "meeting_at", "showing_at", "offer_at", "contract_at", "contract_sign_at", "archived_at", "archived_reason_id", "source_id", "assigned_user_id", "assigned_office_id", "conversion", "pipeline", "funnel", "seller", "buyer"],
+    "priority": 1,
+    "prompt_file": "analysis_lead_conversion.md"
+  },
+  {
+    "id": "agent_performance",
+    "name": "Agent Productivity & Effectiveness",
+    "description": "Compare agent activity patterns (listing views, calls, shares, reminders) against outcomes (transactions, conversion rates) to identify behaviors that drive success and surface underperforming segments",
+    "keywords": ["user_id", "user_actions", "action", "user_calls", "started_at", "ended_at", "status", "score", "first_logged_in_at", "last_logged_in_at", "last_activity_at", "user_reminders", "remind_at", "listing_transactions", "role_user", "role_id", "view", "quick_view", "get_listing", "follow", "not_interested", "report"],
+    "priority": 2,
+    "prompt_file": "analysis_agent_performance.md"
+  },
+  {
+    "id": "listing_effectiveness",
+    "name": "Listing Performance & Market Dynamics",
+    "description": "Analyze listing engagement rates, days on market by property type and price range, price change patterns, valuation accuracy vs transaction prices, and amenity correlations with listing performance",
+    "keywords": ["listings", "listing_id", "price", "category_id", "tenure_id", "type_id", "room_count", "net_area", "gross_area", "published_at", "unpublished_at", "construction_year", "has_lift", "has_parking_space", "has_swimming_pool", "listing_transactions", "listing_ownerships", "ownership_type", "valuations", "m2_price", "days_on_market", "pricing_ratio", "valuation_score"],
+    "priority": 3,
+    "prompt_file": "analysis_listing_effectiveness.md"
+  },
+  {
+    "id": "response_time",
+    "name": "Lead Response Speed & Follow-up Discipline",
+    "description": "Measure time from lead creation to first contact, quantify the impact of response speed on conversion, analyze notification-to-action gaps, and identify follow-up discipline patterns across offices and agents",
+    "keywords": ["created_at", "contacted_at", "first_response_due", "first_response_due_at", "lead_events", "driver", "direction", "operation", "notifications", "name", "notified_at", "read_at", "SellerLeadAssignmentByFizbot", "LeadAssignmentByOffice", "DailyLeadTracking", "response", "speed"],
+    "priority": 4,
+    "prompt_file": "analysis_response_time.md"
+  },
+  {
+    "id": "buyer_matching",
+    "name": "Buyer-Seller Matching & Engagement",
+    "description": "Analyze listing share effectiveness across channels (WhatsApp, SMS, Telegram), buyer lead criteria matching, share-to-engagement-to-transaction conversion, and buyer demand follow-up patterns",
+    "keywords": ["contact_shares", "contact_shared_listings", "channel", "buyer_lead_id", "seller_lead_id", "contact_id", "is_visible", "sended_at", "ListingViewedByBuyerLead", "EligibleListingsForBuyerLead", "BuyerCallBackReminders", "price_min", "price_max", "room_min", "room_max", "m2_net_min", "m2_net_max", "whatsapp", "sms", "buyer"],
+    "priority": 5,
+    "prompt_file": "analysis_buyer_matching.md"
+  },
+  {
+    "id": "valuation_impact",
+    "name": "Valuation Usage & Pricing Accuracy",
+    "description": "Analyze valuation adoption rates, valuation score distribution, correlation between valuation usage and deal velocity, pricing accuracy (suggested vs actual transaction price), and valuation report sharing patterns",
+    "keywords": ["valuations", "valuation_score", "valuation_star", "pricing_ratio", "days_on_market", "m2_price", "avg_suggested_m2_price", "first_price", "cnt_similar_fresh", "cnt_similar_tired", "cnt_similar_expired", "cnt_similar_transaction", "App\\Valuation", "saved_at"],
+    "priority": 6,
+    "prompt_file": "analysis_valuation_impact.md"
+  }
+]

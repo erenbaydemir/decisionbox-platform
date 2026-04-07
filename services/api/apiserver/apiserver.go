@@ -34,6 +34,7 @@ import (
 	// Domain pack registrations
 	_ "github.com/decisionbox-io/decisionbox/domain-packs/ecommerce/go"
 	_ "github.com/decisionbox-io/decisionbox/domain-packs/gaming/go"
+	_ "github.com/decisionbox-io/decisionbox/domain-packs/real-estate/go"
 	_ "github.com/decisionbox-io/decisionbox/domain-packs/social/go"
 	_ "github.com/decisionbox-io/decisionbox/domain-packs/system-test/go" // env-gated
 
