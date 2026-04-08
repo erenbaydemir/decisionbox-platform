@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/decisionbox-io/decisionbox/services/api/internal/database"
+	"github.com/decisionbox-io/decisionbox/services/api/database"
 	apilog "github.com/decisionbox-io/decisionbox/services/api/internal/log"
-	"github.com/decisionbox-io/decisionbox/services/api/internal/models"
+	"github.com/decisionbox-io/decisionbox/services/api/models"
 )
 
 // ProjectsHandler handles project CRUD endpoints.
@@ -150,6 +150,9 @@ func (h *ProjectsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if incoming.Prompts != nil {
 		existing.Prompts = incoming.Prompts
+	}
+	if incoming.Embedding.Provider != "" {
+		existing.Embedding = incoming.Embedding
 	}
 
 	if err := h.repo.Update(r.Context(), id, existing); err != nil {

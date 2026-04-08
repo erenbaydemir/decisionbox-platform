@@ -10,8 +10,8 @@ import (
 	"time"
 
 	apilog "github.com/decisionbox-io/decisionbox/services/api/internal/log"
-	"github.com/decisionbox-io/decisionbox/services/api/internal/database"
-	"github.com/decisionbox-io/decisionbox/services/api/internal/models"
+	"github.com/decisionbox-io/decisionbox/services/api/database"
+	"github.com/decisionbox-io/decisionbox/services/api/models"
 )
 
 var slugRegexp = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*[a-z0-9]$`)

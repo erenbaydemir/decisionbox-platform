@@ -3,8 +3,8 @@ package handler
 import (
 	"net/http"
 
-	"github.com/decisionbox-io/decisionbox/services/api/internal/database"
-	"github.com/decisionbox-io/decisionbox/services/api/internal/models"
+	"github.com/decisionbox-io/decisionbox/services/api/database"
+	"github.com/decisionbox-io/decisionbox/services/api/models"
 )
 
 // DomainsHandler handles domain listing endpoints used by the project creation flow.

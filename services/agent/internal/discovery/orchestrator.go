@@ -7,7 +7,9 @@ import (
 	"strings"
 	"time"
 
+	goembedding "github.com/decisionbox-io/decisionbox/libs/go-common/embedding"
 	gollm "github.com/decisionbox-io/decisionbox/libs/go-common/llm"
+	"github.com/decisionbox-io/decisionbox/libs/go-common/vectorstore"
 	gowarehouse "github.com/decisionbox-io/decisionbox/libs/go-common/warehouse"
 	"github.com/decisionbox-io/decisionbox/services/agent/internal/ai"
 	"github.com/decisionbox-io/decisionbox/services/agent/internal/database"
@@ -64,6 +66,10 @@ type Orchestrator struct {
 	filterValue    string
 	llmProvider    string
 	llmModel       string
+
+	vectorStore       vectorstore.Provider
+	embeddingProvider goembedding.Provider
+	embedIndexStore   EmbedIndexStore
 }
 
 // OrchestratorOptions configures the orchestrator.
@@ -90,6 +96,13 @@ type OrchestratorOptions struct {
 	LLMProvider     string
 	LLMModel        string
 	EnableDebugLogs bool
+
+	// Optional — nil if Qdrant/embedding not configured
+	VectorStore       vectorstore.Provider
+	EmbeddingProvider goembedding.Provider
+
+	// EmbedIndexStore is needed for Phase 9 to write to insights/recommendations collections
+	EmbedIndexStore EmbedIndexStore
 }
 
 // NewOrchestrator creates a new discovery orchestrator.
@@ -148,6 +161,9 @@ func NewOrchestrator(opts OrchestratorOptions) *Orchestrator {
 		filterValue:        opts.FilterValue,
 		llmProvider:        opts.LLMProvider,
 		llmModel:           opts.LLMModel,
+		vectorStore:        opts.VectorStore,
+		embeddingProvider:  opts.EmbeddingProvider,
+		embedIndexStore:    opts.EmbedIndexStore,
 	}
 }
 
@@ -514,6 +530,11 @@ func (o *Orchestrator) RunDiscovery(ctx context.Context, opts DiscoveryOptions) 
 
 	if err := o.discoveryRepo.Save(ctx, result); err != nil {
 		return nil, fmt.Errorf("failed to save discovery result: %w", err)
+	}
+
+	// Phase 9: Embed & Index (non-fatal — errors logged, discovery still completes)
+	if o.embedIndexStore != nil {
+		o.runPhaseEmbedIndex(ctx, result)
 	}
 
 	// Mark run as completed

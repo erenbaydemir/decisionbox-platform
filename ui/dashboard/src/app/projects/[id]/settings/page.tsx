@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useCallback, useEffect, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import {
   ActionIcon, Alert, Button, Checkbox, CloseButton, Group, Loader, MultiSelect,
   NumberInput, Select, Stack, Switch, Tabs, Text, TextInput, Textarea,
@@ -9,7 +9,7 @@ import {
 import { notifications } from '@mantine/notifications';
 import { IconAlertCircle, IconCheck, IconPlus, IconPlugConnected, IconShieldCheck, IconX } from '@tabler/icons-react';
 import Shell from '@/components/layout/AppShell';
-import { api, Project, ProviderMeta, ConfigField, SecretEntryResponse, TestConnectionResult } from '@/lib/api';
+import { api, Project, ProviderMeta, EmbeddingProviderMeta, ConfigField, SecretEntryResponse, TestConnectionResult } from '@/lib/api';
 
 export default function ProjectSettingsPage() {
   const { id } = useParams<{ id: string }>();
@@ -43,16 +43,61 @@ export default function ProjectSettingsPage() {
   const [savingSecret, setSavingSecret] = useState(false);
   const [savingWhCredential, setSavingWhCredential] = useState(false);
 
+  // Embedding state
+  const [embeddingProviders, setEmbeddingProviders] = useState<EmbeddingProviderMeta[]>([]);
+  const [embProvider, setEmbProvider] = useState('');
+  const [embModel, setEmbModel] = useState('');
+  const [embApiKey, setEmbApiKey] = useState('');
+  const [savingEmbKey, setSavingEmbKey] = useState(false);
+
+  // Warn on browser close/refresh with unsaved changes
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (!dirty) return;
+      e.preventDefault();
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [dirty]);
+
+  // Intercept client-side navigation when dirty
+  const router = useRouter();
+  const guardedNavigate = useCallback((href: string) => {
+    if (!dirty || window.confirm('You have unsaved changes. Leave without saving?')) {
+      router.push(href);
+    }
+  }, [dirty, router]);
+
+  // Intercept sidebar/breadcrumb link clicks when dirty
+  useEffect(() => {
+    if (!dirty) return;
+    const handler = (e: MouseEvent) => {
+      const anchor = (e.target as HTMLElement).closest('a[href]') as HTMLAnchorElement | null;
+      if (!anchor) return;
+      const href = anchor.getAttribute('href');
+      if (!href || href.startsWith('http') || href.startsWith('#')) return;
+      // Allow clicks within the same settings page
+      if (href.includes('/settings')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      guardedNavigate(href);
+    };
+    document.addEventListener('click', handler, true);
+    return () => document.removeEventListener('click', handler, true);
+  }, [dirty, guardedNavigate]);
+
   useEffect(() => {
     Promise.all([
       api.getProject(id),
       api.listWarehouseProviders(),
       api.listLLMProviders(),
+      api.listEmbeddingProviders(),
     ])
-      .then(([proj, whProvs, llmProvs]) => {
+      .then(([proj, whProvs, llmProvs, embProvs]) => {
         setProject(proj);
         setWarehouseProviders(whProvs);
         setLlmProviders(llmProvs);
+        setEmbeddingProviders(embProvs || []);
 
         setName(proj.name);
         setDescription(proj.description || '');
@@ -68,6 +113,8 @@ export default function ProjectSettingsPage() {
         setLlmProvider(proj.llm.provider);
         setLlmModel(proj.llm.model);
         setLlmConfig(proj.llm.config || {});
+        setEmbProvider(proj.embedding?.provider || '');
+        setEmbModel(proj.embedding?.model || '');
         setScheduleEnabled(proj.schedule?.enabled || false);
         setScheduleCron(proj.schedule?.cron_expr || '0 2 * * *');
         setMaxSteps(proj.schedule?.max_steps || 100);
@@ -107,6 +154,7 @@ export default function ProjectSettingsPage() {
           ),
         },
         llm: { provider: llmProvider, model: llmModel, config: llmConfig },
+        embedding: { provider: embProvider, model: embModel },
         schedule: { enabled: scheduleEnabled, cron_expr: scheduleCron, max_steps: maxSteps },
         profile,
       });
@@ -158,6 +206,7 @@ export default function ProjectSettingsPage() {
           <Tabs.Tab value="general">General</Tabs.Tab>
           <Tabs.Tab value="warehouse">Data Warehouse</Tabs.Tab>
           <Tabs.Tab value="ai">AI Provider</Tabs.Tab>
+          <Tabs.Tab value="embedding">Embedding &amp; Search</Tabs.Tab>
           <Tabs.Tab value="schedule">Schedule</Tabs.Tab>
           {profileSchema && <Tabs.Tab value="profile">Profile</Tabs.Tab>}
         </Tabs.List>
@@ -165,8 +214,8 @@ export default function ProjectSettingsPage() {
         {/* General */}
         <Tabs.Panel value="general">
           <SettingsSection>
-            <TextInput label="Project Name" required value={name} onChange={(e) => setName(e.target.value)} />
-            <Textarea label="Description" value={description} onChange={(e) => setDescription(e.target.value)} />
+            <TextInput label="Project Name" required value={name} onChange={(e) => { setName(e.target.value); setDirty(true); }} />
+            <Textarea label="Description" value={description} onChange={(e) => { setDescription(e.target.value); setDirty(true); }} />
             <Group>
               <TextInput label="Domain" value={project.domain} disabled style={{ flex: 1 }} />
               <TextInput label="Category" value={project.category} disabled style={{ flex: 1 }} />
@@ -357,17 +406,103 @@ export default function ProjectSettingsPage() {
           </SettingsSection>
         </Tabs.Panel>
 
+        {/* Embedding & Search */}
+        <Tabs.Panel value="embedding">
+          <SettingsSection>
+            <Text size="sm" fw={500}>Embedding Provider</Text>
+            <Text size="xs" c="dimmed" mb="sm">
+              Configure an embedding provider to enable semantic search across your insights and recommendations.
+            </Text>
+
+            <Select
+              label="Provider"
+              placeholder="Select embedding provider"
+              value={embProvider || null}
+              onChange={(v) => {
+                setEmbProvider(v || '');
+                setEmbModel('');
+                setDirty(true);
+              }}
+              data={embeddingProviders.map(p => ({ value: p.id, label: p.name }))}
+              clearable
+            />
+
+            {embProvider && (() => {
+              const selectedEmb = embeddingProviders.find(p => p.id === embProvider);
+              if (!selectedEmb) return null;
+              return (
+                <>
+                  <Select
+                    label="Model"
+                    placeholder="Select model"
+                    value={embModel || null}
+                    onChange={(v) => { setEmbModel(v || ''); setDirty(true); }}
+                    data={selectedEmb.models.map(m => ({
+                      value: m.id,
+                      label: `${m.name} (${m.dimensions}d)`,
+                    }))}
+                  />
+
+                  {selectedEmb.config_fields.some(f => f.type === 'credential') && (
+                    <>
+                      <Text size="sm" fw={500} mt="md">Embedding API Key</Text>
+                      {secretsList.some(s => s.key === 'embedding-api-key') ? (
+                        <Text size="xs" c="dimmed">
+                          Key set: {secretsList.find(s => s.key === 'embedding-api-key')?.masked}
+                        </Text>
+                      ) : (
+                        <Text size="xs" c="orange">No API key configured yet.</Text>
+                      )}
+                      <Group>
+                        <TextInput
+                          placeholder="sk-..."
+                          value={embApiKey}
+                          onChange={(e) => setEmbApiKey(e.currentTarget.value)}
+                          type="password"
+                          style={{ flex: 1 }}
+                        />
+                        <Button size="sm" loading={savingEmbKey} disabled={!embApiKey} onClick={async () => {
+                          setSavingEmbKey(true);
+                          try {
+                            await api.setSecret(id, 'embedding-api-key', embApiKey);
+                            setEmbApiKey('');
+                            notifications.show({ title: 'Saved', message: 'Embedding API key updated', color: 'green' });
+                            const s = await api.listSecrets(id);
+                            setSecretsList(s || []);
+                          } catch (e: unknown) {
+                            notifications.show({ title: 'Error', message: (e as Error).message, color: 'red' });
+                          } finally {
+                            setSavingEmbKey(false);
+                          }
+                        }}>
+                          Update Key
+                        </Button>
+                      </Group>
+                    </>
+                  )}
+                </>
+              );
+            })()}
+
+            {!embProvider && (
+              <Text size="xs" c="dimmed" mt="sm">
+                Search and &ldquo;Ask Insights&rdquo; features require an embedding provider. You can skip this and configure it later.
+              </Text>
+            )}
+          </SettingsSection>
+        </Tabs.Panel>
+
         {/* Schedule */}
         <Tabs.Panel value="schedule">
           <SettingsSection>
             <Switch label="Enable automatic discovery" checked={scheduleEnabled}
-              onChange={(e) => setScheduleEnabled(e.currentTarget.checked)} />
+              onChange={(e) => { setScheduleEnabled(e.currentTarget.checked); setDirty(true); }} />
             {scheduleEnabled && (
               <TextInput label="Cron Expression" value={scheduleCron}
-                onChange={(e) => setScheduleCron(e.target.value)} description="e.g., 0 2 * * * (daily at 2 AM)" />
+                onChange={(e) => { setScheduleCron(e.target.value); setDirty(true); }} description="e.g., 0 2 * * * (daily at 2 AM)" />
             )}
             <NumberInput label="Max Exploration Steps" value={maxSteps}
-              onChange={(v) => setMaxSteps(Number(v) || 100)} min={10} max={500} />
+              onChange={(v) => { setMaxSteps(Number(v) || 100); setDirty(true); }} min={10} max={500} />
           </SettingsSection>
         </Tabs.Panel>
 

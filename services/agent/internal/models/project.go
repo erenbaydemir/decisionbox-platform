@@ -1,6 +1,10 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	goembedding "github.com/decisionbox-io/decisionbox/libs/go-common/embedding"
+)
 
 // Project represents a DecisionBox project configuration.
 // Stored in MongoDB "projects" collection.
@@ -13,6 +17,7 @@ type Project struct {
 
 	Warehouse WarehouseConfig `bson:"warehouse" json:"warehouse"`
 	LLM       LLMConfig       `bson:"llm" json:"llm"`
+	Embedding goembedding.ProjectConfig `bson:"embedding,omitempty" json:"embedding,omitempty"`
 	Schedule  ScheduleConfig  `bson:"schedule" json:"schedule"`
 
 	Profile map[string]interface{} `bson:"profile,omitempty" json:"profile,omitempty"`

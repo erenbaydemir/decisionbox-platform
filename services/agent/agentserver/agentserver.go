@@ -13,9 +13,13 @@ import (
 	"strings"
 	"time"
 
+	goembedding "github.com/decisionbox-io/decisionbox/libs/go-common/embedding"
 	gollm "github.com/decisionbox-io/decisionbox/libs/go-common/llm"
 	gomongo "github.com/decisionbox-io/decisionbox/libs/go-common/mongodb"
+	"github.com/decisionbox-io/decisionbox/libs/go-common/notify"
 	gosecrets "github.com/decisionbox-io/decisionbox/libs/go-common/secrets"
+	"github.com/decisionbox-io/decisionbox/libs/go-common/vectorstore"
+	qdrantstore "github.com/decisionbox-io/decisionbox/libs/go-common/vectorstore/qdrant"
 	gowarehouse "github.com/decisionbox-io/decisionbox/libs/go-common/warehouse"
 	mongoSecrets "github.com/decisionbox-io/decisionbox/providers/secrets/mongodb"
 	_ "github.com/decisionbox-io/decisionbox/providers/secrets/gcp"   // registers "gcp"
@@ -43,6 +47,13 @@ import (
 	_ "github.com/decisionbox-io/decisionbox/providers/warehouse/redshift"   // registers "redshift"
 	_ "github.com/decisionbox-io/decisionbox/providers/warehouse/snowflake"  // registers "snowflake"
 
+	// Embedding provider registrations
+	_ "github.com/decisionbox-io/decisionbox/providers/embedding/azure-openai" // registers "azure-openai"
+	_ "github.com/decisionbox-io/decisionbox/providers/embedding/bedrock"      // registers "bedrock"
+	_ "github.com/decisionbox-io/decisionbox/providers/embedding/ollama"       // registers "ollama"
+	_ "github.com/decisionbox-io/decisionbox/providers/embedding/openai"       // registers "openai"
+	_ "github.com/decisionbox-io/decisionbox/providers/embedding/vertex-ai"    // registers "vertex-ai"
+	_ "github.com/decisionbox-io/decisionbox/providers/embedding/voyage"       // registers "voyage"
 )
 
 // Run starts the DecisionBox discovery agent.
@@ -199,6 +210,80 @@ func initWarehouseProvider(ctx context.Context, project *models.Project, secretP
 		"provider": project.Warehouse.Provider,
 		"datasets": datasets,
 	}).Info("Warehouse provider initialized")
+
+	return provider, nil
+}
+
+func initQdrant(ctx context.Context, cfg *config.Config) (vectorstore.Provider, func(), error) {
+	if cfg.Qdrant.URL == "" {
+		applog.Info("Qdrant not configured — vector search disabled")
+		return nil, func() {}, nil
+	}
+
+	// Parse host:port from URL
+	host := cfg.Qdrant.URL
+	port := 6334
+	if parts := strings.SplitN(host, ":", 2); len(parts) == 2 {
+		host = parts[0]
+		if p, err := strconv.Atoi(parts[1]); err == nil {
+			port = p
+		}
+	}
+
+	provider, err := qdrantstore.New(qdrantstore.Config{
+		Host:   host,
+		Port:   port,
+		APIKey: cfg.Qdrant.APIKey,
+	})
+	if err != nil {
+		return nil, func() {}, fmt.Errorf("failed to create Qdrant client: %w", err)
+	}
+
+	if err := provider.HealthCheck(ctx); err != nil {
+		if closeErr := provider.Close(); closeErr != nil {
+			applog.WithError(closeErr).Warn("Failed to close Qdrant client after health check failure")
+		}
+		return nil, func() {}, fmt.Errorf("qdrant health check failed: %w", err)
+	}
+
+	applog.WithField("url", cfg.Qdrant.URL).Info("Connected to Qdrant")
+	return provider, func() {
+		if err := provider.Close(); err != nil {
+			applog.WithError(err).Warn("Failed to close Qdrant client")
+		}
+	}, nil
+}
+
+func initEmbeddingProvider(ctx context.Context, project *models.Project, secretProvider gosecrets.Provider, projectID string) (goembedding.Provider, error) {
+	if project.Embedding.Provider == "" {
+		applog.Info("Embedding provider not configured — Phase 9 will skip embedding")
+		return nil, nil
+	}
+
+	apiKey := ""
+	key, err := secretProvider.Get(ctx, projectID, "embedding-api-key")
+	if err == nil && key != "" {
+		apiKey = key
+		applog.Info("Embedding API key loaded from secret provider")
+	} else if err != nil && err != gosecrets.ErrNotFound {
+		applog.WithError(err).Warn("Failed to read embedding API key from secret provider")
+	}
+
+	embCfg := goembedding.ProviderConfig{
+		"api_key": apiKey,
+		"model":   project.Embedding.Model,
+	}
+
+	provider, err := goembedding.NewProvider(project.Embedding.Provider, embCfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create embedding provider (%s): %w", project.Embedding.Provider, err)
+	}
+
+	applog.WithFields(applog.Fields{
+		"provider": project.Embedding.Provider,
+		"model":    project.Embedding.Model,
+		"dims":     provider.Dimensions(),
+	}).Info("Embedding provider initialized")
 
 	return provider, nil
 }
@@ -387,6 +472,21 @@ func runDiscovery(cfg *config.Config, projectID string, runID string, selectedAr
 		return err
 	}
 
+	// Initialize Qdrant (optional — nil if not configured)
+	qdrantProvider, closeQdrant, err := initQdrant(ctx, cfg)
+	if err != nil {
+		applog.WithError(err).Warn("Qdrant initialization failed — vector search disabled")
+		qdrantProvider = nil
+	}
+	defer closeQdrant()
+
+	// Initialize embedding provider (optional — nil if not configured)
+	embeddingProvider, err := initEmbeddingProvider(ctx, project, secretProvider, projectID)
+	if err != nil {
+		applog.WithError(err).Warn("Embedding provider initialization failed — Phase 9 will skip embedding")
+		embeddingProvider = nil
+	}
+
 	// Initialize AI client
 	aiClient, err := ai.New(llm, project.LLM.Model)
 	if err != nil {
@@ -436,9 +536,12 @@ func runDiscovery(cfg *config.Config, projectID string, runID string, selectedAr
 		Datasets:        datasets,
 		FilterField:     project.Warehouse.FilterField,
 		FilterValue:     project.Warehouse.FilterValue,
-		LLMProvider:     project.LLM.Provider,
-		LLMModel:        project.LLM.Model,
-		EnableDebugLogs: enableDebugLogs,
+		LLMProvider:       project.LLM.Provider,
+		LLMModel:          project.LLM.Model,
+		EnableDebugLogs:   enableDebugLogs,
+		VectorStore:       qdrantProvider,
+		EmbeddingProvider: embeddingProvider,
+		EmbedIndexStore:   discovery.NewMongoEmbedIndexStore(db),
 	})
 
 	// Estimate mode: calculate costs without running discovery
@@ -473,8 +576,37 @@ func runDiscovery(cfg *config.Config, projectID string, runID string, selectedAr
 		SelectedAreas:         selectedAreas,
 	})
 	if err != nil {
+		notify.NotifyAll(ctx, notify.Event{
+			Type:        notify.EventDiscoveryFailed,
+			ProjectID:   projectID,
+			ProjectName: project.Name,
+			RunID:       runID,
+			Error:       err.Error(),
+			Timestamp:   time.Now(),
+		})
 		return fmt.Errorf("discovery run failed: %w", err)
 	}
+
+	// Notify registered channels (async, non-fatal)
+	notify.NotifyAll(ctx, notify.Event{
+		Type:               notify.EventDiscoveryCompleted,
+		ProjectID:          projectID,
+		ProjectName:        project.Name,
+		Domain:             project.Domain,
+		Category:           project.Category,
+		RunID:              runID,
+		DiscoveryID:        result.ID,
+		Duration:           result.Duration,
+		InsightsTotal:      len(result.Insights),
+		InsightsCritical:   countBySeverity(result.Insights, "critical"),
+		InsightsHigh:       countBySeverity(result.Insights, "high"),
+		InsightsMedium:     countBySeverity(result.Insights, "medium"),
+		Recommendations:    len(result.Recommendations),
+		QueriesExecuted:    result.TotalSteps,
+		TopInsights:        topInsightBriefs(result.Insights, 5),
+		TopRecommendations: topRecommendationBriefs(result.Recommendations, 3),
+		Timestamp:          time.Now(),
+	})
 
 	applog.WithFields(applog.Fields{
 		"project_id":      projectID,
@@ -486,4 +618,58 @@ func runDiscovery(cfg *config.Config, projectID string, runID string, selectedAr
 	}).Info("Discovery results summary")
 
 	return nil
+}
+
+func countBySeverity(insights []models.Insight, severity string) int {
+	count := 0
+	for _, i := range insights {
+		if i.Severity == severity {
+			count++
+		}
+	}
+	return count
+}
+
+func topInsightBriefs(insights []models.Insight, limit int) []notify.InsightBrief {
+	// Sort by severity: critical > high > medium > low
+	sevOrder := map[string]int{"critical": 4, "high": 3, "medium": 2, "low": 1}
+	sorted := make([]models.Insight, len(insights))
+	copy(sorted, insights)
+	for i := 0; i < len(sorted); i++ {
+		for j := i + 1; j < len(sorted); j++ {
+			if sevOrder[sorted[j].Severity] > sevOrder[sorted[i].Severity] {
+				sorted[i], sorted[j] = sorted[j], sorted[i]
+			}
+		}
+	}
+	if len(sorted) > limit {
+		sorted = sorted[:limit]
+	}
+	briefs := make([]notify.InsightBrief, len(sorted))
+	for i, ins := range sorted {
+		briefs[i] = notify.InsightBrief{
+			ID:            ins.ID,
+			Name:          ins.Name,
+			Severity:      ins.Severity,
+			AnalysisArea:  ins.AnalysisArea,
+			AffectedCount: ins.AffectedCount,
+		}
+	}
+	return briefs
+}
+
+func topRecommendationBriefs(recs []models.Recommendation, limit int) []notify.RecommendationBrief {
+	if len(recs) > limit {
+		recs = recs[:limit]
+	}
+	briefs := make([]notify.RecommendationBrief, len(recs))
+	for i, rec := range recs {
+		briefs[i] = notify.RecommendationBrief{
+			ID:                   rec.ID,
+			Title:                rec.Title,
+			Metric:               rec.ExpectedImpact.Metric,
+			EstimatedImprovement: rec.ExpectedImpact.EstimatedImprovement,
+		}
+	}
+	return briefs
 }

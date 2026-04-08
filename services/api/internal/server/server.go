@@ -7,7 +7,8 @@ import (
 	"github.com/decisionbox-io/decisionbox/libs/go-common/auth"
 	"github.com/decisionbox-io/decisionbox/libs/go-common/health"
 	"github.com/decisionbox-io/decisionbox/libs/go-common/secrets"
-	"github.com/decisionbox-io/decisionbox/services/api/internal/database"
+	"github.com/decisionbox-io/decisionbox/libs/go-common/vectorstore"
+	"github.com/decisionbox-io/decisionbox/services/api/database"
 	"github.com/decisionbox-io/decisionbox/services/api/internal/handler"
 	apilog "github.com/decisionbox-io/decisionbox/services/api/internal/log"
 	"github.com/decisionbox-io/decisionbox/services/api/internal/runner"
@@ -15,7 +16,11 @@ import (
 
 // New creates an HTTP server with all routes registered.
 // Cleans up stale discovery runs from previous container lifecycle.
-func New(db *database.DB, healthHandler *health.Handler, secretProvider secrets.Provider, authProvider auth.Provider) http.Handler {
+func New(db *database.DB, healthHandler *health.Handler, secretProvider secrets.Provider, authProvider auth.Provider, vectorStore ...vectorstore.Provider) http.Handler {
+	var vs vectorstore.Provider
+	if len(vectorStore) > 0 {
+		vs = vectorStore[0]
+	}
 	mux := http.NewServeMux()
 
 	// Repos
@@ -24,6 +29,8 @@ func New(db *database.DB, healthHandler *health.Handler, secretProvider secrets.
 	runRepo := database.NewRunRepository(db)
 	feedbackRepo := database.NewFeedbackRepository(db)
 	pricingRepo := database.NewPricingRepository(db)
+	insightRepo := database.NewInsightRepository(db)
+	recommendationRepo := database.NewRecommendationRepository(db)
 	domainPackRepo := database.NewDomainPackRepository(db)
 
 	// Clean up stale runs from previous container lifecycle
@@ -60,6 +67,11 @@ func New(db *database.DB, healthHandler *health.Handler, secretProvider secrets.
 	estimate := handler.NewEstimateHandler(projectRepo)
 	secretsHandler := handler.NewSecretsHandler(secretProvider, projectRepo)
 	testConn := handler.NewTestConnectionHandler(projectRepo, agentRunner)
+	insights := handler.NewInsightsHandler(insightRepo)
+	recommendations := handler.NewRecommendationsHandler(recommendationRepo)
+	searchHistoryRepo := database.NewSearchHistoryRepository(db)
+	askSessionRepo := database.NewAskSessionRepository(db)
+	search := handler.NewSearchHandler(projectRepo, insightRepo, recommendationRepo, searchHistoryRepo, askSessionRepo, secretProvider, vs)
 
 	// RBAC helpers — wrap a handler with role-based access control.
 	// With NoAuth (default), all requests get "admin" role — all routes pass.
@@ -85,6 +97,7 @@ func New(db *database.DB, healthHandler *health.Handler, secretProvider secrets.
 	// Providers — viewer
 	mux.HandleFunc("GET /api/v1/providers/llm", withRole(viewer, providers.ListLLMProviders))
 	mux.HandleFunc("GET /api/v1/providers/warehouse", withRole(viewer, providers.ListWarehouseProviders))
+	mux.HandleFunc("GET /api/v1/providers/embedding", withRole(viewer, providers.ListEmbeddingProviders))
 
 	// Domain packs — viewer for read, admin for write
 	mux.HandleFunc("GET /api/v1/domain-packs", withRole(viewer, domainPacks.List))
@@ -130,6 +143,21 @@ func New(db *database.DB, healthHandler *health.Handler, secretProvider secrets.
 	mux.HandleFunc("POST /api/v1/discoveries/{runId}/feedback", withRole(member, feedback.Submit))
 	mux.HandleFunc("GET /api/v1/discoveries/{runId}/feedback", withRole(viewer, feedback.List))
 	mux.HandleFunc("DELETE /api/v1/feedback/{id}", withRole(admin, feedback.Delete))
+
+	// Search — viewer
+	mux.HandleFunc("POST /api/v1/projects/{id}/search", withRole(viewer, search.Search))
+	mux.HandleFunc("POST /api/v1/search", withRole(viewer, search.CrossProjectSearch))
+	mux.HandleFunc("POST /api/v1/projects/{id}/ask", withRole(viewer, search.Ask))
+	mux.HandleFunc("GET /api/v1/projects/{id}/ask/sessions", withRole(viewer, search.ListAskSessions))
+	mux.HandleFunc("GET /api/v1/projects/{id}/ask/sessions/{sessionId}", withRole(viewer, search.GetAskSession))
+	mux.HandleFunc("DELETE /api/v1/projects/{id}/ask/sessions/{sessionId}", withRole(admin, search.DeleteAskSession))
+	mux.HandleFunc("GET /api/v1/projects/{id}/search/history", withRole(viewer, search.ListHistory))
+
+	// Insights & Recommendations — viewer
+	mux.HandleFunc("GET /api/v1/projects/{id}/insights", withRole(viewer, insights.List))
+	mux.HandleFunc("GET /api/v1/projects/{id}/insights/{insightId}", withRole(viewer, insights.Get))
+	mux.HandleFunc("GET /api/v1/projects/{id}/recommendations", withRole(viewer, recommendations.List))
+	mux.HandleFunc("GET /api/v1/projects/{id}/recommendations/{recId}", withRole(viewer, recommendations.Get))
 
 	// Pricing — viewer for read, admin for update
 	mux.HandleFunc("GET /api/v1/pricing", withRole(viewer, pricing.Get))

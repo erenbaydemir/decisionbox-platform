@@ -3,7 +3,7 @@ package handler
 import (
 	"testing"
 
-	"github.com/decisionbox-io/decisionbox/services/api/internal/models"
+	"github.com/decisionbox-io/decisionbox/services/api/models"
 )
 
 func TestSeedProjectPrompts_Basic(t *testing.T) {

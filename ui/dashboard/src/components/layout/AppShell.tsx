@@ -5,17 +5,19 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useParams } from 'next/navigation';
 import {
-  IconBook2, IconPackages, IconSearch, IconSettings, IconStack2, IconTool,
+  IconBook2, IconMessageCircle, IconPackages, IconSearch, IconSettings, IconSparkles, IconStack2, IconTool,
 } from '@tabler/icons-react';
 import { api, Project } from '@/lib/api';
+import SpotlightSearch from '@/components/common/SpotlightSearch';
 
 interface ShellProps {
   children: ReactNode;
   breadcrumb?: { label: string; href?: string }[];
   actions?: ReactNode;
+  fullWidth?: boolean;
 }
 
-export default function Shell({ children, breadcrumb, actions }: ShellProps) {
+export default function Shell({ children, breadcrumb, actions, fullWidth }: ShellProps) {
   const pathname = usePathname();
   const params = useParams<{ id?: string }>();
   const projectId = params?.id;
@@ -146,6 +148,31 @@ export default function Shell({ children, breadcrumb, actions }: ShellProps) {
               active={isActive(`/projects/${projectId}/recommendations`)}
             />
 
+            {/* Intelligence section */}
+            <div style={{
+              fontSize: 10,
+              fontWeight: 600,
+              textTransform: 'uppercase',
+              letterSpacing: '0.8px',
+              color: 'var(--db-text-tertiary)',
+              padding: '12px 10px 6px',
+            }}>
+              Intelligence
+            </div>
+
+            <NavItem
+              href={`/projects/${projectId}/search`}
+              icon={<IconSparkles size={16} />}
+              label="Search"
+              active={isActive(`/projects/${projectId}/search`)}
+            />
+            <NavItem
+              href={`/projects/${projectId}/ask`}
+              icon={<IconMessageCircle size={16} />}
+              label="Ask Insights"
+              active={isActive(`/projects/${projectId}/ask`)}
+            />
+
             {/* Configure section */}
             <div style={{
               fontSize: 10,
@@ -208,23 +235,28 @@ export default function Shell({ children, breadcrumb, actions }: ShellProps) {
           padding: '0 24px',
         }}>
           {/* Breadcrumb */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, flex: '1 1 0', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
             {breadcrumb ? breadcrumb.map((item, i) => (
-              <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                {i > 0 && <span style={{ fontSize: 11, color: 'var(--db-text-tertiary)' }}>/</span>}
+              <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flexShrink: i === breadcrumb.length - 1 ? 1 : 0 }}>
+                {i > 0 && <span style={{ fontSize: 11, color: 'var(--db-text-tertiary)', flexShrink: 0 }}>/</span>}
                 {item.href ? (
                   <Link href={item.href} style={{
                     color: 'var(--db-text-tertiary)',
                     textDecoration: 'none',
                     transition: 'color 120ms ease',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    maxWidth: 200,
                   }}
                   onMouseEnter={e => (e.currentTarget.style.color = 'var(--db-text-secondary)')}
                   onMouseLeave={e => (e.currentTarget.style.color = 'var(--db-text-tertiary)')}
+                  title={item.label}
                   >
                     {item.label}
                   </Link>
                 ) : (
-                  <span style={{ fontWeight: 500, color: 'var(--db-text-primary)' }}>{item.label}</span>
+                  <span style={{ fontWeight: 500, color: 'var(--db-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>
                 )}
               </span>
             )) : (
@@ -232,17 +264,18 @@ export default function Shell({ children, breadcrumb, actions }: ShellProps) {
             )}
           </div>
 
+          {/* Spotlight search */}
+          <SpotlightSearch />
+
           {/* Actions */}
-          {actions && (
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              {actions}
-            </div>
-          )}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flex: '1 1 0', justifyContent: 'flex-end' }}>
+            {actions}
+          </div>
         </header>
 
         {/* Content */}
         <main style={{
-          maxWidth: 'var(--db-content-max-width)',
+          maxWidth: fullWidth ? '100%' : 'var(--db-content-max-width)',
           padding: 'var(--db-content-padding)',
           width: '100%',
         }}>

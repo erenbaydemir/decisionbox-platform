@@ -5,9 +5,12 @@ package apiserver
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -15,8 +18,10 @@ import (
 	"github.com/decisionbox-io/decisionbox/libs/go-common/health"
 	gomongo "github.com/decisionbox-io/decisionbox/libs/go-common/mongodb"
 	gosecrets "github.com/decisionbox-io/decisionbox/libs/go-common/secrets"
+	"github.com/decisionbox-io/decisionbox/libs/go-common/vectorstore"
+	qdrantstore "github.com/decisionbox-io/decisionbox/libs/go-common/vectorstore/qdrant"
 	"github.com/decisionbox-io/decisionbox/services/api/internal/config"
-	"github.com/decisionbox-io/decisionbox/services/api/internal/database"
+	"github.com/decisionbox-io/decisionbox/services/api/database"
 	apilog "github.com/decisionbox-io/decisionbox/services/api/internal/log"
 	"github.com/decisionbox-io/decisionbox/services/api/internal/server"
 
@@ -40,6 +45,14 @@ import (
 	_ "github.com/decisionbox-io/decisionbox/providers/warehouse/postgres"
 	_ "github.com/decisionbox-io/decisionbox/providers/warehouse/redshift"
 	_ "github.com/decisionbox-io/decisionbox/providers/warehouse/snowflake"
+
+	// Embedding provider registrations (for /api/v1/providers/embedding listing)
+	_ "github.com/decisionbox-io/decisionbox/providers/embedding/azure-openai"
+	_ "github.com/decisionbox-io/decisionbox/providers/embedding/bedrock"
+	_ "github.com/decisionbox-io/decisionbox/providers/embedding/ollama"
+	_ "github.com/decisionbox-io/decisionbox/providers/embedding/openai"
+	_ "github.com/decisionbox-io/decisionbox/providers/embedding/vertex-ai"
+	_ "github.com/decisionbox-io/decisionbox/providers/embedding/voyage"
 )
 
 // Run starts the DecisionBox API server.
@@ -118,8 +131,30 @@ func Run() {
 	// Auth provider (NoAuth by default, plugins can register via auth.RegisterProvider)
 	authProvider := auth.GetProvider()
 
+	// Qdrant (optional — nil if not configured)
+	var qdrantProvider vectorstore.Provider
+	if cfg.Qdrant.URL != "" {
+		qp, closeQdrant, err := initQdrant(ctx, cfg)
+		if err != nil {
+			apilog.WithError(err).Warn("Qdrant initialization failed — vector search disabled")
+		} else {
+			qdrantProvider = qp
+			defer closeQdrant()
+			apilog.WithField("url", cfg.Qdrant.URL).Info("Connected to Qdrant")
+		}
+	} else {
+		apilog.Info("Qdrant not configured — vector search disabled")
+	}
+
+	// Make shared infrastructure available to enterprise plugins
+	RegisterServices(&Services{
+		DB:             db,
+		SecretProvider: secretProvider,
+		VectorStore:    qdrantProvider,
+	})
+
 	// HTTP server
-	handler := server.New(db, healthHandler, secretProvider, authProvider)
+	handler := server.New(db, healthHandler, secretProvider, authProvider, qdrantProvider)
 	srv := &http.Server{
 		Addr:         ":" + cfg.Server.Port,
 		Handler:      ApplyGlobalMiddlewares(handler),
@@ -150,4 +185,37 @@ func Run() {
 		apilog.WithError(err).Error("Shutdown error")
 	}
 	apilog.Info("Server stopped")
+}
+
+func initQdrant(ctx context.Context, cfg *config.Config) (vectorstore.Provider, func(), error) {
+	host := cfg.Qdrant.URL
+	port := 6334
+	if parts := strings.SplitN(host, ":", 2); len(parts) == 2 {
+		host = parts[0]
+		if p, err := strconv.Atoi(parts[1]); err == nil {
+			port = p
+		}
+	}
+
+	provider, err := qdrantstore.New(qdrantstore.Config{
+		Host:   host,
+		Port:   port,
+		APIKey: cfg.Qdrant.APIKey,
+	})
+	if err != nil {
+		return nil, func() {}, fmt.Errorf("failed to create Qdrant client: %w", err)
+	}
+
+	if err := provider.HealthCheck(ctx); err != nil {
+		if closeErr := provider.Close(); closeErr != nil {
+			apilog.WithError(closeErr).Warn("Failed to close Qdrant client after health check failure")
+		}
+		return nil, func() {}, fmt.Errorf("qdrant health check failed: %w", err)
+	}
+
+	return provider, func() {
+		if err := provider.Close(); err != nil {
+			apilog.WithError(err).Warn("Failed to close Qdrant client")
+		}
+	}, nil
 }
