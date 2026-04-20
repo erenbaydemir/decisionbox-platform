@@ -12,11 +12,24 @@ import (
 	gollm "github.com/decisionbox-io/decisionbox/libs/go-common/llm"
 	commonmodels "github.com/decisionbox-io/decisionbox/libs/go-common/models"
 	gosecrets "github.com/decisionbox-io/decisionbox/libs/go-common/secrets"
+	gosources "github.com/decisionbox-io/decisionbox/libs/go-common/sources"
 	"github.com/decisionbox-io/decisionbox/libs/go-common/vectorstore"
 	"github.com/decisionbox-io/decisionbox/services/api/database"
 	apilog "github.com/decisionbox-io/decisionbox/services/api/internal/log"
 	"github.com/decisionbox-io/decisionbox/services/api/models"
 	"github.com/google/uuid"
+)
+
+// askKnowledgeTopK is the maximum number of project knowledge source chunks
+// to include in /ask responses. Tuned to give the LLM broad context while
+// staying well within typical context windows.
+const (
+	askKnowledgeTopK     = 8
+	askKnowledgeMinScore = 0.4
+	// askKnowledgeTimeout caps knowledge-source retrieval (embedding + vector
+	// search) so a slow provider cannot stall the /ask handler indefinitely.
+	// Mirrors the agent's knowledgeMaxRetrievalPerPhase.
+	askKnowledgeTimeout = 3 * time.Second
 )
 
 // SearchHandler handles semantic search endpoints.
@@ -477,11 +490,24 @@ func (h *SearchHandler) Ask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sources := h.enrichResults(ctx, searchResults)
+	insights := h.enrichResults(ctx, searchResults)
 
-	if len(sources) == 0 {
+	// Retrieve project knowledge source chunks (no-op without enterprise plugin
+	// or when no sources are indexed). Use top-K=8 to give the LLM broad context.
+	retrieveCtx, cancelRetrieve := context.WithTimeout(ctx, askKnowledgeTimeout)
+	knowledgeChunks, knowledgeErr := gosources.GetProvider().RetrieveContext(retrieveCtx, projectID, req.Question, gosources.RetrieveOpts{
+		Limit:    askKnowledgeTopK,
+		MinScore: askKnowledgeMinScore,
+	})
+	cancelRetrieve()
+	if knowledgeErr != nil {
+		apilog.WithError(knowledgeErr).Warn("Knowledge source retrieval failed for /ask; continuing without source context")
+		knowledgeChunks = nil
+	}
+
+	if len(insights) == 0 && len(knowledgeChunks) == 0 {
 		writeJSON(w, http.StatusOK, askResponse{
-			Answer:    "No relevant insights found for this question. Try running a discovery first or rephrasing your question.",
+			Answer:    "No relevant insights or knowledge sources found for this question. Try running a discovery first, attaching documents in Knowledge Sources, or rephrasing your question.",
 			Sources:   []searchResultItem{},
 			Model:     project.LLM.Model,
 			SessionID: req.SessionID,
@@ -489,12 +515,16 @@ func (h *SearchHandler) Ask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build context from sources for LLM
+	// Build context from insights/recommendations for LLM (cited as [1], [2], ...)
 	var contextParts []string
-	for i, s := range sources {
+	for i, s := range insights {
 		contextParts = append(contextParts, fmt.Sprintf("[%d] %s: %s (score: %.2f)", i+1, s.Name, s.Description, s.Score))
 	}
 	contextStr := strings.Join(contextParts, "\n")
+
+	// Append knowledge source chunks (cited as [s1], [s2], ...) using the same
+	// formatter the agent uses, so prompt structure is consistent across the platform.
+	knowledgeSection := gosources.FormatPromptSection(knowledgeChunks)
 
 	// Call LLM to synthesize answer
 	llmProvider, err := h.createLLMProvider(ctx, project, projectID)
@@ -503,9 +533,9 @@ func (h *SearchHandler) Ask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	systemPrompt := "You are a data analyst assistant for DecisionBox. Answer questions based on the provided insights and recommendations from previous discovery runs. Always cite your sources by number (e.g., [1], [2]). If the provided context doesn't contain enough information, say so."
+	systemPrompt := "You are a data analyst assistant for DecisionBox. Answer questions using the provided insights, recommendations, and project knowledge sources. Cite insights and recommendations as [1], [2], etc. Cite knowledge sources as [s1], [s2], etc. If the provided context doesn't contain enough information, say so."
 
-	prompt := fmt.Sprintf("Context from %d relevant insights/recommendations:\n\n%s\n\nQuestion: %s", len(sources), contextStr, req.Question)
+	prompt := fmt.Sprintf("Context from %d relevant insights/recommendations:\n\n%s\n\n%s\nQuestion: %s", len(insights), contextStr, knowledgeSection, req.Question)
 
 	// Build messages with conversation history from session for multi-turn context
 	var messages []gollm.Message
@@ -542,13 +572,24 @@ func (h *SearchHandler) Ask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build session message
-	sessionSources := make([]commonmodels.AskSessionSource, 0, len(sources))
-	for _, s := range sources {
+	// Build session message — include both insight/recommendation citations
+	// and knowledge source chunks so the session record reflects everything
+	// the answer was grounded on.
+	sessionSources := make([]commonmodels.AskSessionSource, 0, len(insights)+len(knowledgeChunks))
+	for _, s := range insights {
 		sessionSources = append(sessionSources, commonmodels.AskSessionSource{
 			ID: s.ID, Type: s.Type, Name: s.Name, Score: s.Score,
 			Severity: s.Severity, AnalysisArea: s.AnalysisArea,
 			Description: s.Description, DiscoveryID: s.DiscoveryID,
+		})
+	}
+	for _, c := range knowledgeChunks {
+		sessionSources = append(sessionSources, commonmodels.AskSessionSource{
+			ID:          chunkCitationID(c),
+			Type:        "source_chunk",
+			Name:        c.SourceName,
+			Score:       c.Score,
+			Description: truncateForSession(c.Text),
 		})
 	}
 	msg := commonmodels.AskSessionMessage{
@@ -580,12 +621,46 @@ func (h *SearchHandler) Ask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Build response Sources: insight items first, then knowledge chunks
+	// surfaced as searchResultItem so the dashboard can render both lists.
+	respSources := make([]searchResultItem, 0, len(insights)+len(knowledgeChunks))
+	respSources = append(respSources, insights...)
+	for _, c := range knowledgeChunks {
+		respSources = append(respSources, searchResultItem{
+			ID:          chunkCitationID(c),
+			Type:        "source_chunk",
+			Score:       c.Score,
+			Name:        c.SourceName,
+			Description: truncateForSession(c.Text),
+		})
+	}
+
 	writeJSON(w, http.StatusOK, askResponse{
 		Answer:    chatResp.Content,
-		Sources:   sources,
+		Sources:   respSources,
 		Model:     chatResp.Model,
 		SessionID: sessionID,
 	})
+}
+
+// truncateForSession trims chunk text to a reasonable size for storage and
+// for display in citation lists. Full chunk text is not stored on the session
+// record — the source itself is the authoritative copy. Truncation is by
+// rune count to avoid splitting multi-byte UTF-8 runes (Portuguese, CJK, etc.).
+func truncateForSession(s string) string {
+	const max = 400
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[:max]) + "…"
+}
+
+// chunkCitationID builds a stable, chunk-unique identifier for session storage
+// and API responses. Multiple chunks from the same source would otherwise
+// collide on SourceID when top-K retrieval returns more than one per document.
+func chunkCitationID(c gosources.Chunk) string {
+	return fmt.Sprintf("%s#%d", c.SourceID, c.Position)
 }
 
 // createLLMProvider creates an LLM provider for a project's RAG answer synthesis.
