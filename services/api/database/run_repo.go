@@ -76,6 +76,64 @@ func (r *RunRepository) GetLatestByProject(ctx context.Context, projectID string
 	return &run, nil
 }
 
+// ListTerminalWithReservation returns runs that have ended (succeeded,
+// failed, or cancelled) AND still carry a non-empty policy reservation.
+// Used by the post-completion confirmer goroutine so discovery runs
+// that the agent wrote as "completed" directly to Mongo still trigger
+// a Confirm on the policy Checker. The caller typically limits the
+// scan to a handful at a time.
+func (r *RunRepository) ListTerminalWithReservation(ctx context.Context, limit int) ([]*models.DiscoveryRun, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	filter := bson.M{
+		"status":                bson.M{"$in": []string{"completed", "failed", "cancelled"}},
+		"policy_reservation_id": bson.M{"$nin": []any{"", nil}},
+	}
+	opts := options.Find().SetLimit(int64(limit))
+	cursor, err := r.col.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, fmt.Errorf("list terminal runs with reservation: %w", err)
+	}
+	defer cursor.Close(ctx) //nolint:errcheck
+	var runs []*models.DiscoveryRun
+	if err := cursor.All(ctx, &runs); err != nil {
+		return nil, fmt.Errorf("decode terminal runs: %w", err)
+	}
+	return runs, nil
+}
+
+// ClearPolicyReservationID unsets the reservation handle on a run so
+// the post-completion confirmer does not re-process it on the next
+// scan. Called after a successful Confirm.
+func (r *RunRepository) ClearPolicyReservationID(ctx context.Context, runID string) error {
+	oid, err := primitive.ObjectIDFromHex(runID)
+	if err != nil {
+		return fmt.Errorf("invalid run ID: %w", err)
+	}
+	_, err = r.col.UpdateByID(ctx, oid, bson.M{
+		"$unset": bson.M{"policy_reservation_id": ""},
+		"$set":   bson.M{"updated_at": time.Now()},
+	})
+	return err
+}
+
+// SetPolicyReservationID stores the opaque reservation handle returned
+// by the policy Checker when the run was triggered. Persisted so exit
+// paths outside the trigger request (cancel, crash sweeper, agent
+// completion callback) can resolve the reservation back to the control
+// plane without keeping request-scoped state.
+func (r *RunRepository) SetPolicyReservationID(ctx context.Context, runID, reservationID string) error {
+	oid, err := primitive.ObjectIDFromHex(runID)
+	if err != nil {
+		return fmt.Errorf("invalid run ID: %w", err)
+	}
+	_, err = r.col.UpdateByID(ctx, oid, bson.M{
+		"$set": bson.M{"policy_reservation_id": reservationID, "updated_at": time.Now()},
+	})
+	return err
+}
+
 // Fail marks a run as failed.
 func (r *RunRepository) Fail(ctx context.Context, runID string, errMsg string) error {
 	oid, err := primitive.ObjectIDFromHex(runID)

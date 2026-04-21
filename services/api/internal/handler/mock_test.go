@@ -122,6 +122,24 @@ func (m *mockProjectRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
+func (m *mockProjectRepo) Count(_ context.Context) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.projects), nil
+}
+
+func (m *mockProjectRepo) CountWithWarehouse(_ context.Context) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := 0
+	for _, p := range m.projects {
+		if p.Warehouse.Provider != "" {
+			n++
+		}
+	}
+	return n, nil
+}
+
 // mockDiscoveryRepo implements database.DiscoveryRepo using an in-memory slice.
 type mockDiscoveryRepo struct {
 	mu          sync.Mutex
@@ -333,6 +351,45 @@ func (m *mockRunRepo) Cancel(_ context.Context, runID string) error {
 	r.Status = "cancelled"
 	now := time.Now()
 	r.CompletedAt = &now
+	return nil
+}
+
+func (m *mockRunRepo) SetPolicyReservationID(_ context.Context, runID, reservationID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r, ok := m.runs[runID]
+	if !ok {
+		return fmt.Errorf("run not found: %s", runID)
+	}
+	r.PolicyReservationID = reservationID
+	return nil
+}
+
+func (m *mockRunRepo) ListTerminalWithReservation(_ context.Context, limit int) ([]*models.DiscoveryRun, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]*models.DiscoveryRun, 0, len(m.runs))
+	for _, r := range m.runs {
+		terminal := r.Status == "completed" || r.Status == "failed" || r.Status == "cancelled"
+		if terminal && r.PolicyReservationID != "" {
+			cp := *r
+			out = append(out, &cp)
+			if limit > 0 && len(out) >= limit {
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
+func (m *mockRunRepo) ClearPolicyReservationID(_ context.Context, runID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r, ok := m.runs[runID]
+	if !ok {
+		return fmt.Errorf("run not found: %s", runID)
+	}
+	r.PolicyReservationID = ""
 	return nil
 }
 

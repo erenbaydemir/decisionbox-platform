@@ -15,6 +15,8 @@ type ProjectRepo interface {
 	List(ctx context.Context, limit, offset int) ([]*models.Project, error)
 	Update(ctx context.Context, id string, p *models.Project) error
 	Delete(ctx context.Context, id string) error
+	Count(ctx context.Context) (int, error)
+	CountWithWarehouse(ctx context.Context) (int, error)
 }
 
 // DiscoveryRepo abstracts discovery read operations for handler unit testing.
@@ -33,6 +35,9 @@ type RunRepo interface {
 	GetRunningByProject(ctx context.Context, projectID string) (*models.DiscoveryRun, error)
 	Fail(ctx context.Context, runID string, errMsg string) error
 	Cancel(ctx context.Context, runID string) error
+	SetPolicyReservationID(ctx context.Context, runID, reservationID string) error
+	ListTerminalWithReservation(ctx context.Context, limit int) ([]*models.DiscoveryRun, error)
+	ClearPolicyReservationID(ctx context.Context, runID string) error
 }
 
 // FeedbackRepo abstracts feedback operations for handler unit testing.

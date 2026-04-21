@@ -3,9 +3,11 @@ package server
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/decisionbox-io/decisionbox/libs/go-common/auth"
 	"github.com/decisionbox-io/decisionbox/libs/go-common/health"
+	"github.com/decisionbox-io/decisionbox/libs/go-common/policy"
 	"github.com/decisionbox-io/decisionbox/libs/go-common/secrets"
 	"github.com/decisionbox-io/decisionbox/libs/go-common/vectorstore"
 	"github.com/decisionbox-io/decisionbox/services/api/database"
@@ -51,6 +53,15 @@ func New(db *database.DB, healthHandler *health.Handler, secretProvider secrets.
 		apilog.WithError(err).Error("Failed to create agent runner")
 		// Fall back to subprocess mode
 		agentRunner = runner.NewSubprocessRunner()
+	}
+
+	// Policy-plugin reconciliation + post-completion confirmer only
+	// run when a non-default Checker is registered. On self-hosted the
+	// Noop drops every call, so the background Mongo queries would be
+	// pure waste.
+	if policy.HasRegisteredChecker() {
+		startCounterReconciliation(projectRepo)
+		startRunConfirmer(runRepo)
 	}
 
 	// Seed pricing from registered providers (if not yet in MongoDB)
@@ -205,6 +216,120 @@ func New(db *database.DB, healthHandler *health.Handler, secretProvider secrets.
 
 	// Middleware chain: CORS → Logging → Auth → RBAC → Router
 	return corsMiddleware(handler.LoggingMiddleware(root))
+}
+
+// counterReconcileInterval is how often the reconciliation goroutine
+// counts projects + data sources and reports them to the policy
+// Checker. Five minutes is comfortably longer than any reserve/confirm
+// round-trip, so steady-state drift is bounded by one tick.
+const counterReconcileInterval = 5 * time.Minute
+
+// startCounterReconciliation launches a goroutine that periodically
+// counts the tenant's persistent resources and forwards them to the
+// registered policy Checker for reconciliation. Does nothing visible
+// on self-hosted because the Noop Checker drops the call.
+//
+// Shutdown: the goroutine runs on context.Background() for the
+// process lifetime. The community API exits by SIGTERM / SIGINT which
+// terminates the whole process — no graceful-shutdown path is
+// wired because there is no in-flight state worth preserving (the
+// next process's startup tick re-reports ground truth). If finer-
+// grained shutdown becomes necessary, thread a shared context from
+// apiserver.Run() through this function.
+func startCounterReconciliation(projectRepo database.ProjectRepo) {
+	go func() {
+		ctx := context.Background()
+		ticker := time.NewTicker(counterReconcileInterval)
+		defer ticker.Stop()
+		// Fire once on startup so the counter is warm before the first tick.
+		reconcileOnce(ctx, projectRepo)
+		for range ticker.C {
+			reconcileOnce(ctx, projectRepo)
+		}
+	}()
+}
+
+func reconcileOnce(ctx context.Context, projectRepo database.ProjectRepo) {
+	projects, err := projectRepo.Count(ctx)
+	if err != nil {
+		apilog.WithError(err).Warn("counter reconciliation: project count failed")
+		return
+	}
+	dataSources, err := projectRepo.CountWithWarehouse(ctx)
+	if err != nil {
+		apilog.WithError(err).Warn("counter reconciliation: data-source count failed")
+		return
+	}
+	policy.GetChecker().SyncCounters(ctx, "", policy.CounterSnapshot{
+		ProjectsCurrent:    projects,
+		DataSourcesCurrent: dataSources,
+	})
+}
+
+// runConfirmerInterval is how often the confirmer scans for terminal
+// runs carrying a reservation. A short tick keeps the concurrent-runs
+// counter accurate between a run completing and the cap freeing up
+// on the dashboard; the sweeper TTL (minutes) is the slower backstop.
+const runConfirmerInterval = 15 * time.Second
+
+func startRunConfirmer(runRepo database.RunRepo) {
+	go func() {
+		ctx := context.Background()
+		ticker := time.NewTicker(runConfirmerInterval)
+		defer ticker.Stop()
+		confirmTerminalRuns(ctx, runRepo)
+		for range ticker.C {
+			confirmTerminalRuns(ctx, runRepo)
+		}
+	}()
+}
+
+// policyStatusFromDB maps a DiscoveryRun.Status ("completed", "failed",
+// "cancelled") to the policy.RunOutcome vocabulary ("success",
+// "failure", "cancelled") used by the handler-side confirm paths, so
+// the control plane receives a consistent value regardless of which
+// code path closed the reservation.
+func policyStatusFromDB(dbStatus string) string {
+	switch dbStatus {
+	case "completed":
+		return "success"
+	case "failed":
+		return "failure"
+	case "cancelled":
+		return "cancelled"
+	default:
+		return dbStatus
+	}
+}
+
+func confirmTerminalRuns(ctx context.Context, runRepo database.RunRepo) {
+	runs, err := runRepo.ListTerminalWithReservation(ctx, 50)
+	if err != nil {
+		apilog.WithError(err).Warn("run confirmer: list terminal runs failed")
+		return
+	}
+	if len(runs) == 0 {
+		return
+	}
+	checker := policy.GetChecker()
+	for _, run := range runs {
+		outcome := policy.RunOutcome{Status: policyStatusFromDB(run.Status)}
+		if run.CompletedAt != nil {
+			outcome.EndedAt = *run.CompletedAt
+		}
+		if run.Error != "" {
+			outcome.Error = run.Error
+		}
+		if err := checker.ConfirmDiscoveryRunEnded(ctx, run.PolicyReservationID, outcome); err != nil {
+			apilog.WithFields(apilog.Fields{"run_id": run.ID, "error": err.Error()}).
+				Warn("run confirmer: policy confirm failed; will retry on next tick")
+			continue
+		}
+		if err := runRepo.ClearPolicyReservationID(ctx, run.ID); err != nil {
+			apilog.WithFields(apilog.Fields{"run_id": run.ID, "error": err.Error()}).
+				Warn("run confirmer: clearing reservation id failed; may double-confirm on next tick")
+		}
+	}
 }
 
 func corsMiddleware(next http.Handler) http.Handler {
