@@ -56,10 +56,10 @@ func TestVertexAIProvider_ChatUnsupportedModel(t *testing.T) {
 	})
 
 	if err == nil {
-		t.Fatal("expected error for unsupported model")
+		t.Fatal("expected error for unsupported model without endpoint_url")
 	}
-	if !contains(err.Error(), "unsupported model") {
-		t.Errorf("error = %q, want 'unsupported model'", err.Error())
+	if !contains(err.Error(), "endpoint_url") {
+		t.Errorf("error = %q, should suggest setting endpoint_url", err.Error())
 	}
 }
 
@@ -159,9 +159,104 @@ func TestVertexAIProvider_ConfigFields(t *testing.T) {
 	if !fieldKeys["model"] {
 		t.Error("missing model config field")
 	}
+	if !fieldKeys["endpoint_url"] {
+		t.Error("missing endpoint_url config field (needed for Model Garden deployed models)")
+	}
 	// Should NOT have api_key — uses GCP ADC
 	if fieldKeys["api_key"] {
 		t.Error("vertex-ai should not have api_key field — uses GCP ADC")
+	}
+}
+
+func TestBuildEndpointURL(t *testing.T) {
+	projectID := "decisionbox"
+	location := "us-central1"
+	full := "https://mg-endpoint-abc.us-central1-12345.prediction.vertexai.goog/v1beta1/projects/decisionbox/locations/us-central1/endpoints/mg-endpoint-abc"
+
+	tests := []struct {
+		name    string
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "empty input returns empty",
+			in:   "",
+			want: "",
+		},
+		{
+			name: "whitespace returns empty",
+			in:   "   ",
+			want: "",
+		},
+		{
+			name: "full URL passed through",
+			in:   full,
+			want: full,
+		},
+		{
+			name: "full URL with trailing slash is trimmed",
+			in:   full + "/",
+			want: full,
+		},
+		{
+			name: "full URL with /chat/completions is stripped",
+			in:   full + "/chat/completions",
+			want: full,
+		},
+		{
+			name: "DNS only, no scheme → full URL constructed",
+			in:   "mg-endpoint-abc.us-central1-12345.prediction.vertexai.goog",
+			want: full,
+		},
+		{
+			name: "DNS only with https:// scheme → full URL constructed",
+			in:   "https://mg-endpoint-abc.us-central1-12345.prediction.vertexai.goog",
+			want: full,
+		},
+		{
+			name: "DNS with trailing slash → still works",
+			in:   "https://mg-endpoint-abc.us-central1-12345.prediction.vertexai.goog/",
+			want: full,
+		},
+		{
+			name:    "URL with non-empty path but no /endpoints/ is rejected",
+			in:      "https://example.com/some/wrong/path",
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := buildEndpointURL(tt.in, projectID, location)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("buildEndpointURL(%q) = %q, want error", tt.in, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("buildEndpointURL(%q): unexpected error: %v", tt.in, err)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("buildEndpointURL(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestVertexAI_Factory_InvalidEndpointURL(t *testing.T) {
+	_, err := gollm.NewProvider("vertex-ai", gollm.ProviderConfig{
+		"project_id":   "my-project",
+		"location":     "us-central1",
+		"model":        "gemma-4-31b-it",
+		"endpoint_url": "https://example.com/some/wrong/path",
+	})
+	if err == nil {
+		t.Fatal("expected error for endpoint_url with wrong path")
+	}
+	if !contains(err.Error(), "/endpoints/") && !contains(err.Error(), "path") {
+		t.Errorf("error = %q, should mention /endpoints/ or path", err.Error())
 	}
 }
 

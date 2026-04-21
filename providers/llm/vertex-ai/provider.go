@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	urlpkg "net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -41,6 +42,11 @@ func init() {
 			return nil, fmt.Errorf("vertex-ai: model is required")
 		}
 
+		endpointURL, err := buildEndpointURL(cfg["endpoint_url"], projectID, location)
+		if err != nil {
+			return nil, err
+		}
+
 		timeoutSec, _ := strconv.Atoi(cfg["timeout_seconds"])
 		if timeoutSec == 0 {
 			timeoutSec = 300 // 5 minutes default — Opus needs more time for large prompts
@@ -54,19 +60,21 @@ func init() {
 		}
 
 		return &VertexAIProvider{
-			projectID:  projectID,
-			location:   location,
-			model:      model,
-			auth:       auth,
-			httpClient: &http.Client{Timeout: time.Duration(timeoutSec) * time.Second},
+			projectID:   projectID,
+			location:    location,
+			model:       model,
+			endpointURL: endpointURL,
+			auth:        auth,
+			httpClient:  &http.Client{Timeout: time.Duration(timeoutSec) * time.Second},
 		}, nil
 	}, gollm.ProviderMeta{
 		Name:        "Google Vertex AI",
-		Description: "GCP-managed AI platform — Claude & Gemini models with GCP auth",
+		Description: "GCP-managed AI platform — Claude, Gemini, and Model Garden deployed models with GCP auth",
 		ConfigFields: []gollm.ConfigField{
 			{Key: "project_id", Label: "GCP Project ID", Required: true, Type: "string", Placeholder: "my-gcp-project"},
 			{Key: "location", Label: "Region", Type: "string", Default: "us-east5", Description: "GCP region (us-east5 for Claude, us-central1 for Gemini)"},
-			{Key: "model", Label: "Model", Required: true, Type: "string", Default: "claude-sonnet-4-20250514", Placeholder: "claude-sonnet-4-20250514 or gemini-2.5-pro"},
+			{Key: "model", Label: "Model", Required: true, Type: "string", Default: "claude-sonnet-4-20250514", Placeholder: "claude-sonnet-4-20250514, gemini-2.5-pro, or gemma-4-31b-it"},
+			{Key: "endpoint_url", Label: "Model Garden Endpoint URL", Type: "string", Description: "Only for deployed Model Garden models (e.g. Gemma, Mistral). Paste either the full base URL ending in /endpoints/{ID}, or just the Dedicated DNS from the Vertex console (e.g. mg-endpoint-xxx.us-central1-123.prediction.vertexai.goog). Leave empty for Claude/Gemini serverless models.", Placeholder: "mg-endpoint-xxx.us-central1-123.prediction.vertexai.goog"},
 		},
 		DefaultPricing: map[string]gollm.TokenPricing{
 			"claude-opus-4-6":   {InputPerMillion: 15.0, OutputPerMillion: 75.0},
@@ -97,13 +105,61 @@ func init() {
 }
 
 // VertexAIProvider implements llm.Provider for Google Vertex AI.
-// Routes to Claude or Gemini backend based on model name.
+// Routes to Claude, Gemini, or a Model Garden deployed endpoint based on
+// configuration: endpoint_url takes priority, then model name prefix.
 type VertexAIProvider struct {
-	projectID  string
-	location   string
-	model      string
-	auth       *gcpAuth
-	httpClient *http.Client
+	projectID   string
+	location    string
+	model       string
+	endpointURL string // if set, routes through the Model Garden OpenAI-compatible path
+	auth        *gcpAuth
+	httpClient  *http.Client
+}
+
+// buildEndpointURL returns a fully-qualified Model Garden endpoint base URL
+// (ending in /endpoints/{ID}, with no trailing slash or /chat/completions
+// suffix) given whatever the user pasted into the config.
+//
+// Accepted inputs:
+//   - "" → returns "" (Model Garden path disabled, falls back to Claude/Gemini routing)
+//   - Full base URL, e.g. "https://<dns>/v1beta1/projects/<p>/locations/<r>/endpoints/<id>"
+//   - Full base URL with trailing "/chat/completions" or "/" (normalized away)
+//   - Dedicated endpoint DNS only, e.g. "mg-endpoint-<uuid>.<region>-<project>.prediction.vertexai.goog"
+//     (with or without "https://" prefix) — the endpoint ID is derived from
+//     the first DNS subdomain, then the full path is constructed using the
+//     configured project_id and location.
+func buildEndpointURL(raw, projectID, location string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	raw = strings.TrimRight(raw, "/")
+	raw = strings.TrimSuffix(raw, "/chat/completions")
+	raw = strings.TrimRight(raw, "/")
+
+	if !strings.HasPrefix(raw, "https://") && !strings.HasPrefix(raw, "http://") {
+		raw = "https://" + raw
+	}
+
+	if strings.Contains(raw, "/endpoints/") {
+		return raw, nil
+	}
+
+	parsed, err := urlpkg.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("vertex-ai: invalid endpoint_url %q: %w", raw, err)
+	}
+	if parsed.Path != "" && parsed.Path != "/" {
+		return "", fmt.Errorf("vertex-ai: endpoint_url %q has a path but does not contain /endpoints/{ID}", raw)
+	}
+
+	idx := strings.Index(parsed.Host, ".")
+	if idx <= 0 {
+		return "", fmt.Errorf("vertex-ai: cannot derive endpoint ID from %q — paste either the full base URL including /endpoints/{ID}, or the dedicated endpoint DNS ({ENDPOINT_ID}.<region>-<project>.prediction.vertexai.goog)", raw)
+	}
+	endpointID := parsed.Host[:idx]
+
+	return fmt.Sprintf("%s/v1beta1/projects/%s/locations/%s/endpoints/%s", raw, projectID, location, endpointID), nil
 }
 
 // Validate checks that GCP credentials are valid and the model endpoint is accessible.
@@ -121,12 +177,17 @@ func (p *VertexAIProvider) Validate(ctx context.Context) error {
 }
 
 // Chat sends a conversation to Vertex AI.
-// Routes to Claude or Gemini based on the model name.
+// If endpoint_url is configured, routes through the Model Garden OpenAI-compatible
+// path regardless of model name. Otherwise routes to Claude or Gemini by model
+// name prefix.
 func (p *VertexAIProvider) Chat(ctx context.Context, req gollm.ChatRequest) (*gollm.ChatResponse, error) {
 	if req.Model == "" {
 		req.Model = p.model
 	}
 
+	if p.endpointURL != "" {
+		return p.modelGardenChat(ctx, req)
+	}
 	if isClaude(req.Model) {
 		return p.claudeChat(ctx, req)
 	}
@@ -134,7 +195,7 @@ func (p *VertexAIProvider) Chat(ctx context.Context, req gollm.ChatRequest) (*go
 		return p.geminiChat(ctx, req)
 	}
 
-	return nil, fmt.Errorf("vertex-ai: unsupported model %q — use claude-* or gemini-* models", req.Model)
+	return nil, fmt.Errorf("vertex-ai: model %q is not claude-* or gemini-*; set endpoint_url to use a Model Garden deployed endpoint", req.Model)
 }
 
 // isClaude returns true if the model name is a Claude model.

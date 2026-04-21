@@ -972,6 +972,217 @@ func TestVertexAI_ClaudeChat_MultipleContentBlocks(t *testing.T) {
 	}
 }
 
+// --- Model Garden (OpenAI-compatible) tests ---
+
+// newTestModelGardenProvider creates a provider configured with an endpoint_url
+// pointing at a test server, so Chat() routes through modelGardenChat.
+func newTestModelGardenProvider(serverURL, model string) *VertexAIProvider {
+	p := newTestProviderWithURL(serverURL, model)
+	// Endpoint URL must contain /endpoints/ to pass init-style validation,
+	// but in tests the rewriteTransport sends the request to serverURL anyway.
+	p.endpointURL = "https://dummy.us-central1-prediction.vertexai.goog/v1beta1/projects/test/locations/us-central1/endpoints/999"
+	return p
+}
+
+func TestVertexAI_ModelGardenChat_Success(t *testing.T) {
+	var capturedPath string
+	var capturedBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		capturedBody, _ = io.ReadAll(r.Body)
+
+		auth := r.Header.Get("Authorization")
+		if auth != "Bearer test-token-123" {
+			t.Errorf("auth header = %q, want Bearer test-token-123", auth)
+		}
+		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+			t.Errorf("content-type = %q, want application/json", ct)
+		}
+
+		resp := map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{
+					"message":       map[string]string{"content": "Hello from Gemma!"},
+					"finish_reason": "stop",
+				},
+			},
+			"usage": map[string]int{
+				"prompt_tokens":     20,
+				"completion_tokens": 5,
+				"total_tokens":      25,
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := newTestModelGardenProvider(server.URL, "gemma-4-31b-it")
+
+	resp, err := p.Chat(context.Background(), gollm.ChatRequest{
+		Model:    "gemma-4-31b-it",
+		Messages: []gollm.Message{{Role: "user", Content: "Hello"}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Content != "Hello from Gemma!" {
+		t.Errorf("content = %q, want %q", resp.Content, "Hello from Gemma!")
+	}
+	if resp.Model != "gemma-4-31b-it" {
+		t.Errorf("model = %q, want gemma-4-31b-it (should echo configured model)", resp.Model)
+	}
+	if resp.StopReason != "stop" {
+		t.Errorf("stop_reason = %q, want stop", resp.StopReason)
+	}
+	if resp.Usage.InputTokens != 20 {
+		t.Errorf("input_tokens = %d, want 20", resp.Usage.InputTokens)
+	}
+	if resp.Usage.OutputTokens != 5 {
+		t.Errorf("output_tokens = %d, want 5", resp.Usage.OutputTokens)
+	}
+
+	if !strings.HasSuffix(capturedPath, "/chat/completions") {
+		t.Errorf("path = %q, expected to end with /chat/completions", capturedPath)
+	}
+
+	// Body should NOT contain a `model` field (dedicated endpoint convention).
+	var reqBody map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &reqBody); err != nil {
+		t.Fatalf("failed to parse request body: %v", err)
+	}
+	if _, ok := reqBody["model"]; ok {
+		t.Error("request body should NOT include 'model' for dedicated Model Garden endpoints")
+	}
+}
+
+func TestVertexAI_ModelGardenChat_SystemPrompt(t *testing.T) {
+	var capturedBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody, _ = io.ReadAll(r.Body)
+
+		resp := map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{"message": map[string]string{"content": "ok"}, "finish_reason": "stop"},
+			},
+			"usage": map[string]int{"prompt_tokens": 5, "completion_tokens": 1, "total_tokens": 6},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := newTestModelGardenProvider(server.URL, "gemma-4-31b-it")
+
+	_, err := p.Chat(context.Background(), gollm.ChatRequest{
+		Model:        "gemma-4-31b-it",
+		SystemPrompt: "You are a helpful assistant.",
+		Messages:     []gollm.Message{{Role: "user", Content: "Hi"}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var reqBody openaiRequest
+	if err := json.Unmarshal(capturedBody, &reqBody); err != nil {
+		t.Fatalf("failed to parse request body: %v", err)
+	}
+	if len(reqBody.Messages) != 2 {
+		t.Fatalf("expected 2 messages (system + user), got %d", len(reqBody.Messages))
+	}
+	if reqBody.Messages[0].Role != "system" {
+		t.Errorf("first message role = %q, want system", reqBody.Messages[0].Role)
+	}
+	if reqBody.Messages[0].Content != "You are a helpful assistant." {
+		t.Errorf("first message content = %q", reqBody.Messages[0].Content)
+	}
+	if reqBody.Messages[1].Role != "user" {
+		t.Errorf("second message role = %q, want user", reqBody.Messages[1].Role)
+	}
+}
+
+func TestVertexAI_ModelGardenChat_APIError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error": "max_tokens must be positive"}`))
+	}))
+	defer server.Close()
+
+	p := newTestModelGardenProvider(server.URL, "gemma-4-31b-it")
+
+	_, err := p.Chat(context.Background(), gollm.ChatRequest{
+		Model:    "gemma-4-31b-it",
+		Messages: []gollm.Message{{Role: "user", Content: "Hi"}},
+	})
+	if err == nil {
+		t.Fatal("expected error for 400 response")
+	}
+	if !contains(err.Error(), "API error") {
+		t.Errorf("error = %q, should mention API error", err.Error())
+	}
+	if !contains(err.Error(), "400") {
+		t.Errorf("error = %q, should include status code 400", err.Error())
+	}
+}
+
+func TestVertexAI_ModelGardenChat_EmptyChoices(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"choices": [], "usage": {}}`))
+	}))
+	defer server.Close()
+
+	p := newTestModelGardenProvider(server.URL, "gemma-4-31b-it")
+
+	_, err := p.Chat(context.Background(), gollm.ChatRequest{
+		Model:    "gemma-4-31b-it",
+		Messages: []gollm.Message{{Role: "user", Content: "Hi"}},
+	})
+	if err == nil {
+		t.Fatal("expected error for response with no choices")
+	}
+	if !contains(err.Error(), "no choices") {
+		t.Errorf("error = %q, should mention 'no choices'", err.Error())
+	}
+}
+
+// TestVertexAI_ModelGardenRoutingPriority verifies that setting endpoint_url
+// routes through modelGardenChat *even for claude-* or gemini-* model names*.
+// This lets users deploy, e.g., Claude via Model Garden if they want.
+func TestVertexAI_ModelGardenRoutingPriority(t *testing.T) {
+	var servedPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		servedPath = r.URL.Path
+		resp := map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{"message": map[string]string{"content": "routed to MG"}, "finish_reason": "stop"},
+			},
+			"usage": map[string]int{"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	// Use a claude-* model name but with endpoint_url set.
+	// Model Garden path should win.
+	p := newTestModelGardenProvider(server.URL, "claude-sonnet-4-20250514")
+
+	resp, err := p.Chat(context.Background(), gollm.ChatRequest{
+		Model:    "claude-sonnet-4-20250514",
+		Messages: []gollm.Message{{Role: "user", Content: "test"}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Content != "routed to MG" {
+		t.Errorf("routing went to Claude-on-Vertex path instead of Model Garden (content=%q)", resp.Content)
+	}
+	if !strings.HasSuffix(servedPath, "/chat/completions") {
+		t.Errorf("expected /chat/completions path, got %q", servedPath)
+	}
+}
+
 // --- Auth error tests ---
 
 func TestVertexAI_AuthTokenError(t *testing.T) {
