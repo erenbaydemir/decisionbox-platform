@@ -13,9 +13,12 @@ func TestIsAnthropic(t *testing.T) {
 	}{
 		{"anthropic.claude-sonnet-4-20250514-v1:0", true},
 		{"us.anthropic.claude-sonnet-4-20250514-v1:0", true},
+		{"eu.anthropic.claude-haiku-4-5-20251001-v1:0", true},
 		{"anthropic.claude-3-haiku-20240307-v1:0", true},
 		{"meta.llama3-70b-instruct-v1:0", false},
 		{"mistral.mistral-large-2407-v1:0", false},
+		{"qwen.qwen3-next-80b-a3b-v1:0", false},
+		{"us.qwen.qwen3-32b-v1:0", false},
 		{"", false},
 	}
 	for _, tt := range tests {
@@ -68,18 +71,21 @@ func TestBedrockProvider_Registered(t *testing.T) {
 		t.Error("no default pricing")
 	}
 
-	// MaxOutputTokens
+	// MaxOutputTokens — 8 Claude entries + 5 Qwen entries + _default.
 	if meta.MaxOutputTokens == nil {
 		t.Fatal("MaxOutputTokens should not be nil")
 	}
-	if len(meta.MaxOutputTokens) != 9 {
-		t.Errorf("MaxOutputTokens has %d entries, want 9", len(meta.MaxOutputTokens))
+	if len(meta.MaxOutputTokens) != 14 {
+		t.Errorf("MaxOutputTokens has %d entries, want 14", len(meta.MaxOutputTokens))
 	}
 	if meta.MaxOutputTokens["claude-opus-4-6"] != 128000 {
 		t.Errorf("MaxOutputTokens[claude-opus-4-6] = %d, want 128000", meta.MaxOutputTokens["claude-opus-4-6"])
 	}
 	if meta.MaxOutputTokens["claude-haiku-4-5"] != 64000 {
 		t.Errorf("MaxOutputTokens[claude-haiku-4-5] = %d, want 64000", meta.MaxOutputTokens["claude-haiku-4-5"])
+	}
+	if meta.MaxOutputTokens["qwen3-next-80b-a3b"] != 32768 {
+		t.Errorf("MaxOutputTokens[qwen3-next-80b-a3b] = %d, want 32768", meta.MaxOutputTokens["qwen3-next-80b-a3b"])
 	}
 
 	// Verify GetMaxOutputTokens helper

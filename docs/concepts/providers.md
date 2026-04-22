@@ -88,7 +88,7 @@ Used by the "Test Connection" button in the dashboard.
 | OpenAI | `openai` | API key | gpt-4o, gpt-4o-mini |
 | Ollama | `ollama` | None (local) | Any model: llama3.1, qwen2.5, mistral, etc. |
 | Google Vertex AI | `vertex-ai` | GCP ADC | Claude + Gemini (via Google) |
-| AWS Bedrock | `bedrock` | AWS credentials | Claude + Llama + Mistral (via AWS) |
+| AWS Bedrock | `bedrock` | AWS credentials | Claude + Qwen + Llama + Mistral (via AWS) |
 | Azure AI Foundry | `azure-foundry` | API key | Claude + OpenAI GPT (via Azure) |
 
 **Location:** `providers/llm/{provider-name}/`
