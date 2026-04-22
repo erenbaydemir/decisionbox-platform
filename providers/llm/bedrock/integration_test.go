@@ -202,7 +202,7 @@ func TestIntegration_UnsupportedModelPrefix(t *testing.T) {
 // integration tests do not require a Qwen-enabled account. Example:
 //
 //	INTEGRATION_TEST_BEDROCK_REGION=us-east-1 \
-//	INTEGRATION_TEST_BEDROCK_QWEN_MODEL=qwen.qwen3-next-80b-a3b-v1:0 \
+//	INTEGRATION_TEST_BEDROCK_QWEN_MODEL=qwen.qwen3-next-80b-a3b \
 //	  go test -tags=integration ./providers/llm/bedrock/...
 
 func TestIntegration_Qwen_BasicChat(t *testing.T) {

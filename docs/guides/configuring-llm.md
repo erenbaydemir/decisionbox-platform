@@ -155,12 +155,13 @@ Bedrock model IDs are different from direct Anthropic IDs:
 | Claude | Sonnet 4 | `us.anthropic.claude-sonnet-4-20250514-v1:0` |
 | Claude | Opus 4 | `us.anthropic.claude-opus-4-20250514-v1:0` |
 | Claude | Haiku 4.5 | `us.anthropic.claude-haiku-4-5-20251001-v1:0` |
-| Qwen | Qwen3 Next 80B A3B | `qwen.qwen3-next-80b-a3b-v1:0` |
-| Qwen | Qwen3 Coder Next | `qwen.qwen3-coder-next-v1:0` |
+| Qwen | Qwen3 Next 80B A3B | `qwen.qwen3-next-80b-a3b` |
+| Qwen | Qwen3 Coder Next | `qwen.qwen3-coder-next` |
+| Qwen | Qwen3 VL 235B A22B | `qwen.qwen3-vl-235b-a22b` |
 | Qwen | Qwen3 32B (dense) | `qwen.qwen3-32b-v1:0` |
-| Qwen | Qwen3 Coder 30B A3B Instruct | `qwen.qwen3-coder-30b-a3b-instruct-v1:0` |
+| Qwen | Qwen3 Coder 30B A3B | `qwen.qwen3-coder-30b-a3b-v1:0` |
 
-The `us.` prefix is an inference profile ID required for Anthropic cross-region inference; Qwen serverless IDs typically do not require it. Check the AWS Bedrock catalogue for your region for the exact ID.
+The `us.` prefix is an inference profile ID required for Anthropic cross-region inference. Qwen serverless IDs do not require it, and AWS Bedrock publishes some Qwen models with a `-v1:0` version suffix and others without — verify the exact ID in the Bedrock model catalog for your region (e.g., `aws bedrock list-foundation-models --region us-east-1 --query "modelSummaries[?contains(modelId, 'qwen')].modelId"`).
 
 ### How requests are routed
 

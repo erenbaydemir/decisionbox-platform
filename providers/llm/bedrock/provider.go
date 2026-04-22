@@ -12,7 +12,7 @@
 // Configuration:
 //
 //	LLM_PROVIDER=bedrock
-//	LLM_MODEL=anthropic.claude-sonnet-4-20250514-v1:0   # or qwen.qwen3-next-80b-a3b-v1:0
+//	LLM_MODEL=anthropic.claude-sonnet-4-20250514-v1:0   # or qwen.qwen3-next-80b-a3b
 //	region in project LLM config (default: us-east-1)
 //
 // Authentication: AWS credentials (IAM role, env vars, or ~/.aws/credentials).

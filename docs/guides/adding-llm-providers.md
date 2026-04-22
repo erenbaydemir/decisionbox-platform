@@ -147,6 +147,53 @@ func (p *MyProvider) Chat(ctx context.Context, req gollm.ChatRequest) (*gollm.Ch
 - **Handle retries externally** — The agent's AI client handles retries. Your provider should not retry internally.
 - **Set `MaxOutputTokens` accurately** — Check each model's API documentation for max output token limits. The agent calls `gollm.GetMaxOutputTokens(providerName, model)` to request the model's full output capacity during phases like recommendation generation. Use the `_default` key for a fallback when the exact model name is not listed.
 
+### If your API speaks the OpenAI `/chat/completions` schema
+
+Many providers expose an OpenAI-compatible chat completions API (OpenAI itself, Azure AI Foundry for OpenAI-family deployments, AWS Bedrock for Qwen, DeepSeek, Groq, Together, Fireworks, vLLM, LM Studio, etc.). For these, use the shared helper package at `libs/go-common/llm/openaicompat` instead of duplicating the request/response types. It gives you:
+
+- `openaicompat.BuildRequestBody(req, model)` → marshals a `gollm.ChatRequest` into the canonical OpenAI body (system prompt prepended as `role="system"` message, `max_tokens` / `temperature` handled, empty model omitted)
+- `openaicompat.ParseResponseBody(body)` → decodes the response and returns a `*gollm.ChatResponse`, surfacing structured `*openaicompat.APIError` errors via the standard `error` interface
+- `openaicompat.ExtractAPIError(body)` → for transports that receive a non-200 status and want to render a structured error message from the body
+
+Only the transport and authentication stay in your provider. Sketch:
+
+```go
+import "github.com/decisionbox-io/decisionbox/libs/go-common/llm/openaicompat"
+
+func (p *MyProvider) Chat(ctx context.Context, req gollm.ChatRequest) (*gollm.ChatResponse, error) {
+    model := req.Model
+    if model == "" {
+        model = p.model
+    }
+
+    body, err := openaicompat.BuildRequestBody(req, model)
+    if err != nil {
+        return nil, fmt.Errorf("myprovider: %w", err)
+    }
+
+    // Send `body` via your provider's transport (HTTP POST, AWS InvokeModel, etc.)
+    // and authentication (Bearer header, signed request, api-key header, etc.).
+    respBytes, status, err := p.send(ctx, body)
+    if err != nil {
+        return nil, fmt.Errorf("myprovider: request failed: %w", err)
+    }
+    if status != 200 {
+        if apiErr := openaicompat.ExtractAPIError(respBytes); apiErr != nil {
+            return nil, fmt.Errorf("myprovider: API error (%d): %s", status, apiErr.Error())
+        }
+        return nil, fmt.Errorf("myprovider: API error (%d): %s", status, string(respBytes))
+    }
+
+    resp, err := openaicompat.ParseResponseBody(respBytes)
+    if err != nil {
+        return nil, fmt.Errorf("myprovider: %w", err)
+    }
+    return resp, nil
+}
+```
+
+If your API uses a different model selector (e.g., AWS Bedrock where the model ID sits in `InvokeModelInput.ModelId`), pass `""` as the second argument to `BuildRequestBody` so the `model` field is omitted from the JSON body. See `providers/llm/bedrock/qwen.go` for a full working example that combines `openaicompat` with a non-HTTP transport.
+
 ## Step 3: Register in Services
 
 Add blank imports to both services:
@@ -275,6 +322,7 @@ cd providers/llm/myprovider && go test -tags=integration -count=1 -timeout=2m -v
 - [ ] `timeout_seconds` read from config (not hardcoded)
 - [ ] Model override supported (`req.Model` takes priority)
 - [ ] Token usage returned accurately
+- [ ] For OpenAI-compatible APIs: use `libs/go-common/llm/openaicompat` instead of copying the request/response types
 - [ ] Imported in agent + API `main.go`
 - [ ] `replace` directive in both go.mod files
 - [ ] Dockerfile COPY line for go.mod
