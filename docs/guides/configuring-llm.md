@@ -12,7 +12,7 @@ DecisionBox supports six LLM providers. This guide covers setting up each one.
 | **OpenAI** | GPT-4o, GPT-4o-mini | API key | Widely used. Good alternative. |
 | **Ollama** | Llama 3.1, Qwen 2.5, Mistral, any GGUF | None (local) | Free, private, no API key needed. |
 | **Vertex AI** | Claude + Gemini (via Google) | GCP ADC | GCP users. Managed billing, IAM auth. |
-| **AWS Bedrock** | Claude + Llama + Mistral (via AWS) | AWS credentials | AWS users. Managed billing, IAM auth. |
+| **AWS Bedrock** | Claude + Qwen + Llama + Mistral (via AWS) | AWS credentials | AWS users. Managed billing, IAM auth. |
 | **Azure AI Foundry** | Claude + OpenAI GPT (via Azure) | API key | Azure users. Managed billing, Azure RBAC. |
 
 ## Claude (Direct Anthropic API)
@@ -122,12 +122,12 @@ The provider automatically routes to the correct API format based on model name 
 
 ## AWS Bedrock
 
-Access Claude, Llama, and Mistral through AWS's managed platform. Uses AWS IAM for authentication.
+Access Claude, Qwen, Llama, and Mistral through AWS's managed platform. Uses AWS IAM for authentication.
 
 ### 1. Prerequisites
 
 - AWS account with Bedrock access
-- Claude model access enabled in [Bedrock Model Access](https://console.aws.amazon.com/bedrock/home#/modelaccess)
+- Model access enabled in [Bedrock Model Access](https://console.aws.amazon.com/bedrock/home#/modelaccess) for the model family you want (Anthropic and/or Qwen)
 - AWS credentials configured:
 
 ```bash
@@ -138,7 +138,7 @@ aws configure
 ### 2. Configure in Dashboard
 
 1. Select **AWS Bedrock** as LLM provider
-2. Enter model name: `us.anthropic.claude-sonnet-4-20250514-v1:0`
+2. Enter model name (examples below)
 3. Set provider-specific config:
    - **Region**: AWS region (e.g., `us-east-1`)
 
@@ -150,13 +150,25 @@ Bedrock uses AWS credentials (IAM role, env vars, or `~/.aws/credentials`). No L
 
 Bedrock model IDs are different from direct Anthropic IDs:
 
-| Model | Bedrock Model ID |
-|-------|-----------------|
-| Claude Sonnet 4 | `us.anthropic.claude-sonnet-4-20250514-v1:0` |
-| Claude Opus 4 | `us.anthropic.claude-opus-4-20250514-v1:0` |
-| Claude Haiku 4.5 | `us.anthropic.claude-haiku-4-5-20251001-v1:0` |
+| Family | Model | Bedrock Model ID |
+|--------|-------|------------------|
+| Claude | Sonnet 4 | `us.anthropic.claude-sonnet-4-20250514-v1:0` |
+| Claude | Opus 4 | `us.anthropic.claude-opus-4-20250514-v1:0` |
+| Claude | Haiku 4.5 | `us.anthropic.claude-haiku-4-5-20251001-v1:0` |
+| Qwen | Qwen3 Next 80B A3B | `qwen.qwen3-next-80b-a3b` |
+| Qwen | Qwen3 Coder Next | `qwen.qwen3-coder-next` |
+| Qwen | Qwen3 VL 235B A22B | `qwen.qwen3-vl-235b-a22b` |
+| Qwen | Qwen3 32B (dense) | `qwen.qwen3-32b-v1:0` |
+| Qwen | Qwen3 Coder 30B A3B | `qwen.qwen3-coder-30b-a3b-v1:0` |
 
-The `us.` prefix is an inference profile ID required for newer models.
+The `us.` prefix is an inference profile ID required for Anthropic cross-region inference. Qwen serverless IDs do not require it, and AWS Bedrock publishes some Qwen models with a `-v1:0` version suffix and others without — verify the exact ID in the Bedrock model catalog for your region (e.g., `aws bedrock list-foundation-models --region us-east-1 --query "modelSummaries[?contains(modelId, 'qwen')].modelId"`).
+
+### How requests are routed
+
+The Bedrock provider inspects the model ID prefix and picks the right request shape automatically:
+
+- `anthropic.*` / `<region>.anthropic.*` → Anthropic Messages API body (`anthropic_version`, top-level `system`).
+- `qwen.*` / `<region>.qwen.*` → OpenAI-compatible chat completions body (`messages[]` with a `system` message; no top-level `system` field). The request and response shape is shared with the OpenAI and Azure AI Foundry providers via the internal `openaicompat` package, so Qwen benefits from the same test coverage as those providers.
 
 ## Timeout Configuration
 

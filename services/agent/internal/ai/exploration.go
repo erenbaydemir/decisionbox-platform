@@ -17,20 +17,37 @@ type ExplorationEngine struct {
 	client   *Client
 	executor *queryexec.QueryExecutor
 	maxSteps int
+	minSteps int
 	dataset  string
 	onStep   StepCallback
 }
 
+// maxParseRetries caps how many times we re-prompt the LLM on a single step
+// when it returns a response we can't parse. Each retry injects a short
+// "please respond in JSON" nudge into the conversation.
+const maxParseRetries = 3
+
 // StepCallback is called after each exploration step with live progress data.
-type StepCallback func(stepNum int, thinking, query string, rowCount int, queryTimeMs int64, queryFixed bool, errMsg string)
+// The action argument carries the step's action type — usually "query_data"
+// for a real query, "complete_rejected" when the LLM signalled done before
+// MinSteps and the engine rejected it. Downstream (StatusReporter) uses
+// this to distinguish real queries from non-query events so the live UI
+// doesn't render a rejected completion as an empty-SQL failed query and
+// the per-run query counter only counts real queries.
+type StepCallback func(stepNum int, action, thinking, query string, rowCount int, queryTimeMs int64, queryFixed bool, errMsg string)
 
 // ExplorationEngineOptions configures the exploration engine.
 type ExplorationEngineOptions struct {
-	Client       *Client
-	Executor     *queryexec.QueryExecutor
-	MaxSteps     int
-	Dataset      string
-	OnStep       StepCallback // optional: called after each step for live status
+	Client   *Client
+	Executor *queryexec.QueryExecutor
+	MaxSteps int
+	// MinSteps is a floor on the number of exploration steps before the engine
+	// accepts a "done" signal from the LLM. Early done signals below this
+	// threshold are rejected with a nudge and exploration continues. Zero
+	// disables the floor.
+	MinSteps int
+	Dataset  string
+	OnStep   StepCallback // optional: called after each step for live status
 }
 
 // NewExplorationEngine creates a new exploration engine.
@@ -38,11 +55,18 @@ func NewExplorationEngine(opts ExplorationEngineOptions) *ExplorationEngine {
 	if opts.MaxSteps == 0 {
 		opts.MaxSteps = 100
 	}
+	if opts.MinSteps < 0 {
+		opts.MinSteps = 0
+	}
+	if opts.MinSteps > opts.MaxSteps {
+		opts.MinSteps = opts.MaxSteps
+	}
 
 	return &ExplorationEngine{
 		client:   opts.Client,
 		executor: opts.Executor,
 		maxSteps: opts.MaxSteps,
+		minSteps: opts.MinSteps,
 		dataset:  opts.Dataset,
 		onStep:   opts.OnStep,
 	}
@@ -101,52 +125,47 @@ func (e *ExplorationEngine) Explore(
 			"messages": len(conversation.GetMessages()),
 		}).Info("Exploration step starting")
 
-		// Call LLM to decide next action
-		llmStart := time.Now()
-		response, err := e.client.CreateMessage(
-			ctx,
-			conversation.GetMessages(),
-			conversation.GetSystemPrompt(),
-			4096,
-		)
+		action, err := e.runStepWithRetry(ctx, conversation, step)
 		if err != nil {
-			logger.WithFields(logger.Fields{
-				"step":  step,
-				"error": err.Error(),
-			}).Error("LLM call failed during exploration")
-			result.Error = fmt.Errorf("step %d: failed to get LLM response: %w", step, err)
+			result.Error = err
 			result.Duration = time.Since(startTime)
-			return result, result.Error
+			return result, err
 		}
 
-		logger.WithFields(logger.Fields{
-			"step":       step,
-			"tokens_in":  response.Usage.InputTokens,
-			"tokens_out": response.Usage.OutputTokens,
-			"llm_ms":     time.Since(llmStart).Milliseconds(),
-		}).Debug("LLM response received")
-
-		// Extract response text
-		responseText := ""
-		if len(response.Content) > 0 {
-			responseText = response.Content
-		}
-
-		// Add to conversation
-		conversation.AddAssistantMessage(responseText)
-
-		// Parse LLM's decision
-		action, err := e.parseAction(responseText)
-		if err != nil {
+		// Reject premature completion: if the LLM says "done" before the min-step
+		// floor, nudge it to keep exploring instead of terminating. This guards
+		// against models (especially reasoning models) that are biased toward
+		// declaring completion quickly.
+		if action.Action == "complete" && step < e.minSteps {
 			logger.WithFields(logger.Fields{
-				"step":     step,
-				"error":    err.Error(),
-				"response": responseText[:min(len(responseText), 200)],
-			}).Warn("Failed to parse action from LLM response, treating as complete")
-			action = &ExplorationAction{
-				Action: "complete",
-				Reason: "Could not parse action",
+				"step":      step,
+				"min_steps": e.minSteps,
+			}).Warn("LLM signalled done before minimum steps — rejecting and continuing")
+
+			nudge := fmt.Sprintf(
+				"You've only completed %d of the required minimum %d exploration steps. "+
+					"Do not signal completion yet — there are more analysis areas to cover. "+
+					"Respond with the next query in the documented JSON format: "+
+					`{"thinking": "...", "query": "SELECT ..."}.`,
+				step, e.minSteps,
+			)
+			conversation.AddUserMessage(nudge)
+
+			// Record the rejected completion as a step so it's visible in logs / UI
+			// without short-circuiting the run.
+			result.Steps = append(result.Steps, models.ExplorationStep{
+				Step:      step,
+				Timestamp: time.Now(),
+				Action:    "complete_rejected",
+				Thinking:  action.Thinking,
+				Error:     fmt.Sprintf("rejected premature completion (%d < %d)", step, e.minSteps),
+			})
+			result.TotalSteps = step
+
+			if e.onStep != nil {
+				e.onStep(step, "complete_rejected", action.Thinking, "", 0, 0, false, fmt.Sprintf("rejected premature completion (%d < %d)", step, e.minSteps))
 			}
+			continue
 		}
 
 		// Create exploration step
@@ -173,14 +192,14 @@ func (e *ExplorationEngine) Explore(
 		// Report step for live status
 		if e.onStep != nil {
 			errMsg := explorationStep.Error
-			e.onStep(step, action.Thinking, explorationStep.Query, explorationStep.RowCount, explorationStep.ExecutionTimeMs, explorationStep.Fixed, errMsg)
+			e.onStep(step, action.Action, action.Thinking, explorationStep.Query, explorationStep.RowCount, explorationStep.ExecutionTimeMs, explorationStep.Fixed, errMsg)
 		}
 
 		// Check if exploration is complete
 		if action.Action == "complete" {
 			result.Completed = true
 			result.CompletionMsg = action.Reason
-			logger.WithField("step", step).Info("Exploration completed by Claude")
+			logger.WithField("step", step).Info("Exploration completed")
 			break
 		}
 
@@ -220,21 +239,96 @@ type ExplorationAction struct {
 	Reason       string
 }
 
-// parseAction parses Claude's response into an action
-func (e *ExplorationEngine) parseAction(response string) (*ExplorationAction, error) {
-	// Claude can respond in two formats:
-	//
-	// 1. Query: {"thinking": "...", "query": "SELECT ..."}
-	// 2. Done: {"done": true, "summary": "..."}
-	//
-	// Legacy format also supported:
-	// {"action": "query_data", "thinking": "...", "query": "..."}
+// runStepWithRetry calls the LLM for one exploration step and parses the
+// response. If the response can't be parsed into an ExplorationAction the
+// conversation is nudged to reformat and the turn retries up to
+// maxParseRetries times before returning a hard error. This replaces the
+// previous behaviour where an unparseable response silently terminated the
+// run as "complete" — the main cause of short-runs on reasoning models like
+// Qwen3 and DeepSeek R1.
+func (e *ExplorationEngine) runStepWithRetry(ctx context.Context, conversation *Conversation, step int) (*ExplorationAction, error) {
+	var lastParseErr error
 
-	// Try to extract JSON from response
+	for attempt := 0; attempt <= maxParseRetries; attempt++ {
+		llmStart := time.Now()
+		response, err := e.client.CreateMessage(
+			ctx,
+			conversation.GetMessages(),
+			conversation.GetSystemPrompt(),
+			4096,
+		)
+		if err != nil {
+			logger.WithFields(logger.Fields{
+				"step":    step,
+				"attempt": attempt,
+				"error":   err.Error(),
+			}).Error("LLM call failed during exploration")
+			return nil, fmt.Errorf("step %d: failed to get LLM response: %w", step, err)
+		}
+
+		logger.WithFields(logger.Fields{
+			"step":       step,
+			"attempt":    attempt,
+			"tokens_in":  response.Usage.InputTokens,
+			"tokens_out": response.Usage.OutputTokens,
+			"llm_ms":     time.Since(llmStart).Milliseconds(),
+		}).Debug("LLM response received")
+
+		responseText := ""
+		if len(response.Content) > 0 {
+			responseText = response.Content
+		}
+
+		conversation.AddAssistantMessage(responseText)
+
+		action, err := e.parseAction(responseText)
+		if err == nil {
+			return action, nil
+		}
+
+		lastParseErr = err
+		preview := responseText
+		if len(preview) > 200 {
+			preview = preview[:200]
+		}
+		logger.WithFields(logger.Fields{
+			"step":     step,
+			"attempt":  attempt,
+			"error":    err.Error(),
+			"response": preview,
+		}).Warn("Failed to parse exploration action; nudging LLM to reformat")
+
+		if attempt == maxParseRetries {
+			break
+		}
+
+		conversation.AddUserMessage(
+			"Your previous response could not be parsed as an exploration action. " +
+				"Respond with exactly ONE JSON object, no prose around it, matching one of:\n" +
+				`  {"thinking": "...", "query": "SELECT ..."}  — to run a query, or` + "\n" +
+				`  {"done": true, "summary": "..."}            — only when exploration is truly finished.` + "\n" +
+				"Do not wrap it in markdown fences unless necessary and do not emit planning JSON before the action.",
+		)
+	}
+
+	return nil, fmt.Errorf("step %d: unable to parse LLM response after %d attempts: %w", step, maxParseRetries+1, lastParseErr)
+}
+
+// parseAction parses the LLM's response into an ExplorationAction.
+//
+// The response must contain a JSON object with ONE of:
+//   - {"query": "SELECT ..."}              → execute the query
+//   - {"done": true, "summary": "..."}     → exploration finished
+//   - {"action": "query_data" | "complete" | ...}  (legacy)
+//
+// A response with no parseable action JSON is an error. The caller retries
+// the turn rather than silently treating it as "complete" — early exploration
+// termination (previously caused by prose matching "done"/"finished" or
+// missing fields) is the bug this parser is designed to prevent.
+func (e *ExplorationEngine) parseAction(response string) (*ExplorationAction, error) {
 	jsonStr := e.extractJSON(response)
 	if jsonStr == "" {
-		// If no JSON, try to infer action from text
-		return e.inferActionFromText(response)
+		return nil, fmt.Errorf("no action JSON object found in response")
 	}
 
 	var action ExplorationAction
@@ -242,7 +336,6 @@ func (e *ExplorationEngine) parseAction(response string) (*ExplorationAction, er
 		return nil, fmt.Errorf("failed to parse action JSON: %w", err)
 	}
 
-	// Normalize action field for backward compatibility
 	switch {
 	case action.Done:
 		action.Action = "complete"
@@ -251,105 +344,143 @@ func (e *ExplorationEngine) parseAction(response string) (*ExplorationAction, er
 		}
 	case action.Query != "":
 		action.Action = "query_data"
-	case action.Action == "":
-		// No action specified, assume complete
-		action.Action = "complete"
-		action.Done = true
+	case action.Action == "complete":
+		// Legacy explicit complete — accept.
+	case action.Action == "query_data" && action.Query != "":
+		// Legacy explicit query — accept.
+	default:
+		// JSON parsed but carries neither a query nor an explicit completion signal.
+		// Fail loudly so the caller can re-prompt, instead of silently terminating.
+		return nil, fmt.Errorf("action JSON has no query, done flag, or recognized action (got action=%q)", action.Action)
 	}
 
 	return &action, nil
 }
 
-// extractJSON extracts JSON from response (handles markdown code blocks)
+// extractJSON extracts a JSON action object from the LLM response.
+//
+// Reasoning / "thinking" models (Qwen3, DeepSeek R1, GPT-OSS, ...) emit
+// multiple JSON-shaped blocks per turn — a planning / reasoning preamble,
+// followed by the real action. We gather every candidate JSON object
+// (both fenced and raw) into a single ordered list and return the LAST
+// one that carries a recognized action key (query, done, or action). If
+// no candidate has an action key, we fall back to the last balanced
+// object overall. This way a fenced preamble without an action key
+// cannot hijack parsing when the real action lives later outside fences.
 func (e *ExplorationEngine) extractJSON(text string) string {
-	// Look for ```json code blocks
-	if strings.Contains(text, "```json") {
-		start := strings.Index(text, "```json")
-		if start == -1 {
-			return ""
-		}
-		start += 7 // len("```json")
-
-		end := strings.Index(text[start:], "```")
-		if end == -1 {
-			return ""
-		}
-
-		return strings.TrimSpace(text[start : start+end])
+	candidates := collectJSONCandidates(text)
+	if len(candidates) == 0 {
+		return ""
 	}
-
-	// Look for generic ``` code blocks
-	if strings.Contains(text, "```") {
-		start := strings.Index(text, "```")
-		if start == -1 {
-			return ""
-		}
-		start += 3
-
-		end := strings.Index(text[start:], "```")
-		if end == -1 {
-			return ""
-		}
-
-		jsonCandidate := strings.TrimSpace(text[start : start+end])
-		// Check if it looks like JSON
-		if strings.HasPrefix(jsonCandidate, "{") {
-			return jsonCandidate
+	for i := len(candidates) - 1; i >= 0; i-- {
+		if jsonHasActionKey(candidates[i]) {
+			return candidates[i]
 		}
 	}
+	return candidates[len(candidates)-1]
+}
 
-	// Look for raw JSON (starts with {)
-	if strings.Contains(text, "{") {
-		start := strings.Index(text, "{")
-		// Find matching closing brace
-		braceCount := 0
-		for i := start; i < len(text); i++ {
-			switch text[i] {
+// collectJSONCandidates returns every plausible JSON object in text:
+// first the contents of each fenced block (```json / ``` / ```JSON) that
+// starts with '{', then every balanced top-level { ... } found by a
+// scan over the raw text. Fenced blocks are listed first so that, when
+// no candidate carries an action key, the fallback prefers raw trailing
+// JSON over a fenced preamble.
+func collectJSONCandidates(text string) []string {
+	var out []string
+	out = append(out, fencedJSONBlocks(text)...)
+	out = append(out, findBalancedJSONObjects(text)...)
+	return out
+}
+
+// fencedJSONBlocks returns every markdown-fenced block whose body starts
+// with '{'. Language tags json / JSON / (empty) are all accepted.
+func fencedJSONBlocks(text string) []string {
+	var out []string
+	for rest := text; ; {
+		idx := strings.Index(rest, "```")
+		if idx < 0 {
+			break
+		}
+		after := rest[idx+3:]
+		if nl := strings.IndexByte(after, '\n'); nl >= 0 {
+			maybeLang := strings.TrimSpace(after[:nl])
+			if maybeLang == "" || strings.EqualFold(maybeLang, "json") {
+				after = after[nl+1:]
+			}
+		}
+		end := strings.Index(after, "```")
+		if end < 0 {
+			break
+		}
+		block := strings.TrimSpace(after[:end])
+		if strings.HasPrefix(block, "{") {
+			out = append(out, block)
+		}
+		rest = after[end+3:]
+	}
+	return out
+}
+
+// findBalancedJSONObjects returns every balanced top-level { ... } substring
+// in text, in order. String literals are tracked so { / } inside strings
+// (e.g., inside a SQL query) don't break the brace count.
+func findBalancedJSONObjects(text string) []string {
+	var out []string
+	for i := 0; i < len(text); i++ {
+		if text[i] != '{' {
+			continue
+		}
+		depth := 0
+		inString := false
+		escaped := false
+		for j := i; j < len(text); j++ {
+			c := text[j]
+			if inString {
+				if escaped {
+					escaped = false
+					continue
+				}
+				switch c {
+				case '\\':
+					escaped = true
+				case '"':
+					inString = false
+				}
+				continue
+			}
+			switch c {
+			case '"':
+				inString = true
 			case '{':
-				braceCount++
+				depth++
 			case '}':
-				braceCount--
-				if braceCount == 0 {
-					return text[start : i+1]
+				depth--
+				if depth == 0 {
+					out = append(out, text[i:j+1])
+					i = j
+					goto next
 				}
 			}
 		}
+		// Unbalanced from i — stop scanning (no further balanced objects possible).
+		break
+	next:
 	}
-
-	return ""
+	return out
 }
 
-// inferActionFromText tries to infer action from plain text
-func (e *ExplorationEngine) inferActionFromText(text string) (*ExplorationAction, error) {
-	textLower := strings.ToLower(text)
-
-	// Check for completion signals
-	if strings.Contains(textLower, "complete") || strings.Contains(textLower, "done") ||
-		strings.Contains(textLower, "finished") {
-		return &ExplorationAction{
-			Action:   "complete",
-			Thinking: text,
-			Reason:   "Exploration complete",
-		}, nil
+// jsonHasActionKey reports whether the JSON-encoded object declares a field
+// the exploration parser understands (query, done, or action).
+func jsonHasActionKey(s string) bool {
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &probe); err != nil {
+		return false
 	}
-
-	// Check for SQL query
-	textUpper := strings.ToUpper(text)
-	if strings.Contains(textUpper, "SELECT") {
-		return &ExplorationAction{
-			Action:       "query_data",
-			Thinking:     "Executing query",
-			QueryPurpose: "Data exploration",
-			Query:        text,
-		}, nil
-	}
-
-	// Default to complete if we can't parse
-	return &ExplorationAction{
-		Action:   "complete",
-		Thinking: text,
-		Reason:   "Could not parse action",
-	}, nil
+	_, hasQuery := probe["query"]
+	_, hasDone := probe["done"]
+	_, hasAction := probe["action"]
+	return hasQuery || hasDone || hasAction
 }
 
 // executeAction executes the action and returns result message

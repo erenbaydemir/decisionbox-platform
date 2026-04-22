@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	gollm "github.com/decisionbox-io/decisionbox/libs/go-common/llm"
+	"github.com/decisionbox-io/decisionbox/libs/go-common/llm/openaicompat"
 )
 
 func mockOpenAIServer(t *testing.T, handler http.HandlerFunc) *httptest.Server {
@@ -30,26 +31,19 @@ func defaultHandler(t *testing.T) http.HandlerFunc {
 			t.Error("missing Content-Type header")
 		}
 
-		var req chatRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		var req openaicompat.Request
+		_ = json.NewDecoder(r.Body).Decode(&req)
 
-		resp := chatResponse{
+		resp := openaicompat.Response{
 			ID:    "chatcmpl-test",
 			Model: req.Model,
-			Choices: []struct {
-				Message      chatMessage `json:"message"`
-				FinishReason string      `json:"finish_reason"`
-			}{
+			Choices: []openaicompat.Choice{
 				{
-					Message:      chatMessage{Role: "assistant", Content: "Hello from mock OpenAI"},
+					Message:      openaicompat.Message{Role: "assistant", Content: "Hello from mock OpenAI"},
 					FinishReason: "stop",
 				},
 			},
-			Usage: struct {
-				PromptTokens     int `json:"prompt_tokens"`
-				CompletionTokens int `json:"completion_tokens"`
-				TotalTokens      int `json:"total_tokens"`
-			}{
+			Usage: openaicompat.Usage{
 				PromptTokens:     10,
 				CompletionTokens: 5,
 				TotalTokens:      15,
@@ -57,7 +51,7 @@ func defaultHandler(t *testing.T) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}
 }
 
@@ -91,22 +85,21 @@ func TestChat_Success(t *testing.T) {
 }
 
 func TestChat_SystemPrompt(t *testing.T) {
-	var receivedMessages []chatMessage
+	var receivedMessages []openaicompat.Message
 
 	server := mockOpenAIServer(t, func(w http.ResponseWriter, r *http.Request) {
-		var req chatRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		var req openaicompat.Request
+		_ = json.NewDecoder(r.Body).Decode(&req)
 		receivedMessages = req.Messages
 
-		resp := chatResponse{
+		resp := openaicompat.Response{
 			Model: req.Model,
-			Choices: []struct {
-				Message      chatMessage `json:"message"`
-				FinishReason string      `json:"finish_reason"`
-			}{{Message: chatMessage{Role: "assistant", Content: "ok"}, FinishReason: "stop"}},
+			Choices: []openaicompat.Choice{
+				{Message: openaicompat.Message{Role: "assistant", Content: "ok"}, FinishReason: "stop"},
+			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	})
 	defer server.Close()
 
@@ -135,19 +128,18 @@ func TestChat_ModelOverride(t *testing.T) {
 	var receivedModel string
 
 	server := mockOpenAIServer(t, func(w http.ResponseWriter, r *http.Request) {
-		var req chatRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		var req openaicompat.Request
+		_ = json.NewDecoder(r.Body).Decode(&req)
 		receivedModel = req.Model
 
-		resp := chatResponse{
+		resp := openaicompat.Response{
 			Model: req.Model,
-			Choices: []struct {
-				Message      chatMessage `json:"message"`
-				FinishReason string      `json:"finish_reason"`
-			}{{Message: chatMessage{Role: "assistant", Content: "ok"}, FinishReason: "stop"}},
+			Choices: []openaicompat.Choice{
+				{Message: openaicompat.Message{Role: "assistant", Content: "ok"}, FinishReason: "stop"},
+			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	})
 	defer server.Close()
 
@@ -169,7 +161,7 @@ func TestChat_APIError(t *testing.T) {
 	server := mockOpenAIServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"error": map[string]string{
 				"message": "Invalid API key",
 				"type":    "invalid_api_key",
@@ -190,9 +182,9 @@ func TestChat_APIError(t *testing.T) {
 
 func TestChat_EmptyChoices(t *testing.T) {
 	server := mockOpenAIServer(t, func(w http.ResponseWriter, r *http.Request) {
-		resp := chatResponse{Model: "gpt-4o"}
+		resp := openaicompat.Response{Model: "gpt-4o"}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	})
 	defer server.Close()
 
@@ -207,20 +199,19 @@ func TestChat_EmptyChoices(t *testing.T) {
 }
 
 func TestChat_MaxTokensAndTemperature(t *testing.T) {
-	var receivedReq chatRequest
+	var receivedReq openaicompat.Request
 
 	server := mockOpenAIServer(t, func(w http.ResponseWriter, r *http.Request) {
-		json.NewDecoder(r.Body).Decode(&receivedReq)
+		_ = json.NewDecoder(r.Body).Decode(&receivedReq)
 
-		resp := chatResponse{
+		resp := openaicompat.Response{
 			Model: receivedReq.Model,
-			Choices: []struct {
-				Message      chatMessage `json:"message"`
-				FinishReason string      `json:"finish_reason"`
-			}{{Message: chatMessage{Role: "assistant", Content: "ok"}, FinishReason: "stop"}},
+			Choices: []openaicompat.Choice{
+				{Message: openaicompat.Message{Role: "assistant", Content: "ok"}, FinishReason: "stop"},
+			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	})
 	defer server.Close()
 
@@ -312,7 +303,7 @@ func TestValidate_Success(t *testing.T) {
 			t.Errorf("auth = %q", r.Header.Get("Authorization"))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{"data": []interface{}{}})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": []interface{}{}})
 	})
 	defer server.Close()
 
@@ -325,7 +316,7 @@ func TestValidate_Success(t *testing.T) {
 func TestValidate_Unauthorized(t *testing.T) {
 	server := mockOpenAIServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte(`{"error": {"message": "Invalid API key"}}`))
+		_, _ = w.Write([]byte(`{"error": {"message": "Invalid API key"}}`))
 	})
 	defer server.Close()
 
