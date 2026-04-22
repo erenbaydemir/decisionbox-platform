@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Exploration terminated after 2–18 steps on reasoning-model LLMs** — The exploration response parser treated any response it couldn't cleanly decode as a "complete" signal: JSON without `query`/`done`/`action` was silently assumed done, and responses with no JSON fell through to a plain-text substring match on `"done"` / `"complete"` / `"finished"` — so a Qwen3 or DeepSeek-R1 thinking block mentioning *"I'm done analyzing area 1"* or *"the query completed"* ended the run. The parser is now strict: it walks every balanced JSON object (string-literal-aware, so `}` inside SQL strings no longer breaks the count), prefers the last block with a known action key (reasoning preambles no longer hijack the parse), and rejects anything without one. Unparseable responses are re-prompted up to three times with a reformat nudge instead of silently terminating. A new `MinSteps` exploration option (surfaced as `--min-steps` on the agent binary) rejects premature `done` signals, injects a nudge with the current/required step count, and continues — guarding against models biased toward early termination even with valid JSON. Covered by 40+ new unit tests including a Qwen3-style regression reproducing the original failure.
+
+### Changed
+
+- **Agent CLI: `--min-steps` flag** — New integer flag (default `0`, no floor) on `decisionbox-agent`. When non-zero, the agent rejects premature completion signals and records a `complete_rejected` step in the exploration log. Plumbed through `DiscoveryOptions.MinSteps` into `ai.ExplorationEngineOptions.MinSteps`.
+
 - **Docker Compose Quick Start: `decisionbox-agent` missing from API image** — The API container's default `RUNNER_MODE=subprocess` spawns the agent via `exec.Command("decisionbox-agent", ...)`, but `services/api/Dockerfile` only shipped the `decisionbox-api` binary. Starting a discovery failed with `exec: "decisionbox-agent": executable file not found in $PATH`. The API image now also builds and installs `decisionbox-agent` into `/usr/local/bin`, so `docker compose up -d` works end-to-end out of the box. Kubernetes deployments are unaffected — they use `RUNNER_MODE=kubernetes` and run the agent as a Job from its own image.
 
 ## [0.4.0] - 2026-04-14

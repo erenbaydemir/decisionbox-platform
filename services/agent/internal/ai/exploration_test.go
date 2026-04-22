@@ -15,8 +15,8 @@ func TestParseActionQueryFormat(t *testing.T) {
 	engine := &ExplorationEngine{}
 
 	tests := []struct {
-		name     string
-		input    string
+		name       string
+		input      string
 		wantAction string
 		wantQuery  bool
 	}{
@@ -43,12 +43,6 @@ func TestParseActionQueryFormat(t *testing.T) {
 			input:      "Some text\n```json\n{\"thinking\": \"test\", \"query\": \"SELECT 1\"}\n```\nMore text",
 			wantAction: "query_data",
 			wantQuery:  true,
-		},
-		{
-			name:       "empty action defaults to complete",
-			input:      `{"thinking": "nothing more to explore"}`,
-			wantAction: "complete",
-			wantQuery:  false,
 		},
 	}
 
@@ -118,29 +112,30 @@ func TestExtractJSON(t *testing.T) {
 	}
 }
 
-func TestInferActionFromText(t *testing.T) {
+// TestParseAction_NoSilentCompleteFromProse is the regression test for the
+// bug that terminated Qwen3 / DeepSeek-R1 exploration after 2-18 steps.
+// The old inferActionFromText substring-matched "done" / "complete" /
+// "finished" anywhere in the response and treated that as a completion
+// signal — any reasoning-model prose containing those words ended the run
+// silently. The new parser requires an explicit JSON object with a known
+// action key and rejects everything else.
+func TestParseAction_NoSilentCompleteFromProse(t *testing.T) {
 	engine := &ExplorationEngine{}
 
-	tests := []struct {
-		name       string
-		input      string
-		wantAction string
-	}{
-		{"completion signal", "I have completed the analysis", "complete"},
-		{"done signal", "I'm done exploring", "complete"},
-		{"finished signal", "Finished with exploration", "complete"},
-		{"sql query", "SELECT user_id FROM sessions WHERE app_id = 'test'", "query_data"},
-		{"unknown text", "Let me think about this more carefully", "complete"},
+	tests := []string{
+		"I have completed the analysis of all the data.",
+		"I'm done exploring retention.",
+		"Finished analyzing session patterns — let me try another angle next.",
+		"The previous query completed successfully, so now I will...",
+		"Let me think about this more carefully",
+		"", // empty response
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			action, err := engine.inferActionFromText(tt.input)
-			if err != nil {
-				t.Fatalf("error: %v", err)
-			}
-			if action.Action != tt.wantAction {
-				t.Errorf("action = %q, want %q", action.Action, tt.wantAction)
+		t.Run(tt, func(t *testing.T) {
+			action, err := engine.parseAction(tt)
+			if err == nil {
+				t.Fatalf("parseAction(%q) should return error (no JSON action), got action=%+v", tt, action)
 			}
 		})
 	}
@@ -744,13 +739,10 @@ func TestExploration_ExecuteQuery_Success_WithMoreThan10Rows(t *testing.T) {
 func TestExploration_ParseAction_NoJSON(t *testing.T) {
 	engine := &ExplorationEngine{}
 
-	// Text with completion signal but no JSON
-	action, err := engine.parseAction("I have completed the analysis of all the data.")
-	if err != nil {
-		t.Fatalf("parseAction error: %v", err)
-	}
-	if action.Action != "complete" {
-		t.Errorf("action = %q, want complete", action.Action)
+	// Text with completion-like prose but no JSON must NOT silently complete.
+	_, err := engine.parseAction("I have completed the analysis of all the data.")
+	if err == nil {
+		t.Fatal("parseAction should return error when response has no action JSON")
 	}
 }
 
@@ -762,4 +754,585 @@ func containsStr(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// -----------------------------------------------------------------------------
+// Comprehensive coverage for the exploration parser and control flow.
+//
+// These tests exist because a regression in any of: extractJSON,
+// parseAction, runStepWithRetry, or the min-step floor in Explore can silently
+// terminate exploration on reasoning models (Qwen3, DeepSeek-R1, GPT-OSS,
+// ...). The original bug manifested as runs that completed in 2-18 steps
+// instead of 100.
+// -----------------------------------------------------------------------------
+
+func TestExtractJSON_Comprehensive(t *testing.T) {
+	engine := &ExplorationEngine{}
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "fenced json block with language tag",
+			input: "Here is the action:\n```json\n{\"query\": \"SELECT 1\"}\n```\n",
+			want:  `{"query": "SELECT 1"}`,
+		},
+		{
+			name:  "fenced block without language tag",
+			input: "```\n{\"query\": \"SELECT 1\"}\n```",
+			want:  `{"query": "SELECT 1"}`,
+		},
+		{
+			name:  "uppercase JSON language tag",
+			input: "```JSON\n{\"query\": \"SELECT 2\"}\n```",
+			want:  `{"query": "SELECT 2"}`,
+		},
+		{
+			name:  "reasoning preamble before action",
+			input: `{"plan": "first explore users", "step": 1} then {"query": "SELECT id FROM users"}`,
+			want:  `{"query": "SELECT id FROM users"}`,
+		},
+		{
+			name:  "thinking block before query",
+			input: `{"thinking": "I should check retention"}{"query": "SELECT * FROM retention"}`,
+			want:  `{"query": "SELECT * FROM retention"}`,
+		},
+		{
+			name:  "multiple preambles, only last has done",
+			input: `{"summary_so_far": "explored"} {"observation": "complete"} {"done": true, "summary": "finished"}`,
+			want:  `{"done": true, "summary": "finished"}`,
+		},
+		{
+			name:  "brace inside SQL string literal does not break parse",
+			input: `{"query": "SELECT JSON_EXTRACT(col, '$.foo') FROM t WHERE x = '}'"}`,
+			want:  `{"query": "SELECT JSON_EXTRACT(col, '$.foo') FROM t WHERE x = '}'"}`,
+		},
+		{
+			name:  "escaped quote in string literal",
+			input: `{"query": "SELECT \"my col\" FROM t"}`,
+			want:  `{"query": "SELECT \"my col\" FROM t"}`,
+		},
+		{
+			name:  "nested json",
+			input: `{"query": "SELECT 1", "meta": {"purpose": "test"}}`,
+			want:  `{"query": "SELECT 1", "meta": {"purpose": "test"}}`,
+		},
+		{
+			name:  "prose only, no json",
+			input: "I have done a complete analysis and finished everything.",
+			want:  "",
+		},
+		{
+			name:  "object with no action key falls back to last balanced object",
+			input: `{"thinking": "still exploring"}`,
+			want:  `{"thinking": "still exploring"}`,
+		},
+		{
+			name:  "fenced block preferred over raw json when both present",
+			input: "Some raw: {\"thinking\": \"plan\"} then\n```json\n{\"query\": \"SELECT 1\"}\n```",
+			want:  `{"query": "SELECT 1"}`,
+		},
+		{
+			name:  "unbalanced braces returns empty",
+			input: `{"query": "SELECT 1"`,
+			want:  "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := engine.extractJSON(tt.input)
+			if got != tt.want {
+				t.Errorf("extractJSON()\n  got:  %q\n  want: %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestJSONHasActionKey(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{`{"query": "SELECT 1"}`, true},
+		{`{"done": true}`, true},
+		{`{"action": "complete"}`, true},
+		{`{"thinking": "nothing"}`, false},
+		{`{"summary": "stuff"}`, false},
+		{`not json`, false},
+		{`{"plan": "x", "step": 1}`, false},
+		{`{"query": ""}`, true}, // key presence alone counts
+	}
+	for _, tc := range cases {
+		if got := jsonHasActionKey(tc.in); got != tc.want {
+			t.Errorf("jsonHasActionKey(%q) = %v, want %v", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestFindBalancedJSONObjects(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want []string
+	}{
+		{
+			name: "single object",
+			in:   `prefix {"a": 1} suffix`,
+			want: []string{`{"a": 1}`},
+		},
+		{
+			name: "two sibling objects",
+			in:   `{"a": 1} some text {"b": 2}`,
+			want: []string{`{"a": 1}`, `{"b": 2}`},
+		},
+		{
+			name: "nested object counts as one",
+			in:   `{"a": {"b": 1}}`,
+			want: []string{`{"a": {"b": 1}}`},
+		},
+		{
+			name: "brace inside string does not count",
+			in:   `{"q": "x } y"} {"b": 2}`,
+			want: []string{`{"q": "x } y"}`, `{"b": 2}`},
+		},
+		{
+			name: "escaped quote inside string",
+			in:   `{"q": "a \" } b"}`,
+			want: []string{`{"q": "a \" } b"}`},
+		},
+		{
+			name: "unbalanced aborts scan",
+			in:   `{"a": 1`,
+			want: nil,
+		},
+		{
+			name: "no objects at all",
+			in:   "just prose",
+			want: nil,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := findBalancedJSONObjects(tc.in)
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %d objects, want %d — got=%v", len(got), len(tc.want), got)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("object[%d]\n  got:  %q\n  want: %q", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestParseAction_StrictModernContract(t *testing.T) {
+	engine := &ExplorationEngine{}
+
+	type want struct {
+		action  string
+		query   string
+		done    bool
+		summary string
+		errish  bool // true if we expect an error
+	}
+	tests := []struct {
+		name  string
+		input string
+		want  want
+	}{
+		{
+			name:  "query shape",
+			input: `{"thinking": "check count", "query": "SELECT COUNT(*) FROM t"}`,
+			want:  want{action: "query_data", query: "SELECT COUNT(*) FROM t"},
+		},
+		{
+			name:  "done shape with summary",
+			input: `{"done": true, "summary": "all areas covered"}`,
+			want:  want{action: "complete", done: true, summary: "all areas covered"},
+		},
+		{
+			name:  "legacy action=query_data with query",
+			input: `{"action": "query_data", "query": "SELECT 1"}`,
+			want:  want{action: "query_data", query: "SELECT 1"},
+		},
+		{
+			name:  "legacy action=complete",
+			input: `{"action": "complete", "reason": "done"}`,
+			want:  want{action: "complete"},
+		},
+		{
+			name:  "reasoning preamble then query — last wins",
+			input: `{"plan": "step 1: count users"} {"thinking": "execute", "query": "SELECT 1"}`,
+			want:  want{action: "query_data", query: "SELECT 1"},
+		},
+		{
+			name:  "thinking-only json is rejected (NOT silent complete)",
+			input: `{"thinking": "pondering next move"}`,
+			want:  want{errish: true},
+		},
+		{
+			name:  "empty json object is rejected",
+			input: `{}`,
+			want:  want{errish: true},
+		},
+		{
+			name:  "malformed json is rejected",
+			input: `{"query": "SELECT 1"`,
+			want:  want{errish: true},
+		},
+		{
+			name:  "plain prose with 'done' in it is rejected",
+			input: "Great, I'm done with area 1, moving on to area 2.",
+			want:  want{errish: true},
+		},
+		{
+			name:  "plain prose with 'finished' is rejected",
+			input: "The query finished successfully so I can continue.",
+			want:  want{errish: true},
+		},
+		{
+			name:  "action: 'done' with query key still queries (query takes precedence)",
+			input: `{"query": "SELECT 1", "action": "something-weird"}`,
+			want:  want{action: "query_data", query: "SELECT 1"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			action, err := engine.parseAction(tt.input)
+			if tt.want.errish {
+				if err == nil {
+					t.Fatalf("expected error, got action=%+v", action)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseAction error: %v", err)
+			}
+			if action.Action != tt.want.action {
+				t.Errorf("action = %q, want %q", action.Action, tt.want.action)
+			}
+			if tt.want.query != "" && action.Query != tt.want.query {
+				t.Errorf("query = %q, want %q", action.Query, tt.want.query)
+			}
+			if tt.want.done && !action.Done {
+				t.Errorf("done = false, want true")
+			}
+			if tt.want.summary != "" && action.Summary != tt.want.summary {
+				t.Errorf("summary = %q, want %q", action.Summary, tt.want.summary)
+			}
+		})
+	}
+}
+
+// buildTestEngine constructs a minimal ExplorationEngine wired to a
+// scripted mock LLM provider. Used by the retry and min-step tests.
+func buildTestEngine(t *testing.T, opts ExplorationEngineOptions, queue []string) (*ExplorationEngine, *testutil.MockLLMProvider) {
+	t.Helper()
+
+	provider := testutil.NewMockLLMProvider()
+	for _, content := range queue {
+		provider.ResponseQueue = append(provider.ResponseQueue, &gollm.ChatResponse{
+			Content:    content,
+			Model:      "mock-model",
+			StopReason: "end_turn",
+			Usage:      gollm.Usage{InputTokens: 10, OutputTokens: 10},
+		})
+	}
+	// Drain queue; when empty the provider falls back to this default.
+	provider.DefaultResponse = &gollm.ChatResponse{
+		Content:    `{"done": true, "summary": "fallback default"}`,
+		Model:      "mock-model",
+		StopReason: "end_turn",
+		Usage:      gollm.Usage{InputTokens: 10, OutputTokens: 10},
+	}
+
+	client, err := New(provider, "mock-model")
+	if err != nil {
+		t.Fatalf("New(provider): %v", err)
+	}
+	wh := testutil.NewMockWarehouseProvider("test_dataset")
+	executor := queryexec.NewQueryExecutor(queryexec.QueryExecutorOptions{
+		Warehouse:  wh,
+		MaxRetries: 1,
+	})
+
+	opts.Client = client
+	opts.Executor = executor
+	if opts.Dataset == "" {
+		opts.Dataset = "test_dataset"
+	}
+
+	return NewExplorationEngine(opts), provider
+}
+
+func TestRunStepWithRetry_NudgesAndRecovers(t *testing.T) {
+	// First response: unparseable prose (old bug would silently complete).
+	// Second response: malformed JSON (also unparseable).
+	// Third response: a valid query. Run should recover with 3 LLM calls.
+	engine, provider := buildTestEngine(t, ExplorationEngineOptions{
+		MaxSteps: 5,
+	}, []string{
+		"I think I'm done here", // prose, no JSON — would have triggered false complete
+		`{"thinking": "almost"`, // malformed JSON
+		`{"thinking": "run it", "query": "SELECT 1 FROM test_dataset.users"}`,
+	})
+
+	result, err := engine.Explore(context.Background(), ExplorationContext{
+		ProjectID:     "proj-1",
+		Dataset:       "test_dataset",
+		InitialPrompt: "Explore the data.",
+	})
+	if err != nil {
+		t.Fatalf("Explore error: %v", err)
+	}
+
+	// The third response runs a query at step 1. Then we hit the mock's
+	// DefaultResponse (done:true) on the next LLM call and complete at step 2.
+	if !result.Completed {
+		t.Error("run should complete once queue is exhausted and default returns done")
+	}
+	if len(provider.Calls) < 3 {
+		t.Errorf("provider got %d calls, expected at least 3 (one per retry + one to complete)", len(provider.Calls))
+	}
+	// Verify a nudge message actually went into the conversation.
+	var sawNudge bool
+	for _, call := range provider.Calls {
+		for _, msg := range call.Request.Messages {
+			if msg.Role == "user" && containsStr(msg.Content, "could not be parsed as an exploration action") {
+				sawNudge = true
+				break
+			}
+		}
+	}
+	if !sawNudge {
+		t.Error("expected at least one reformat-nudge user message in the conversation")
+	}
+}
+
+func TestRunStepWithRetry_AllAttemptsFail(t *testing.T) {
+	// Queue enough unparseable responses to exhaust the retry budget for
+	// step 1 (1 initial + maxParseRetries retries).
+	queue := make([]string, 0, maxParseRetries+1)
+	for i := 0; i <= maxParseRetries; i++ {
+		queue = append(queue, "Just prose, no JSON here.")
+	}
+
+	engine, provider := buildTestEngine(t, ExplorationEngineOptions{MaxSteps: 5}, queue)
+
+	result, err := engine.Explore(context.Background(), ExplorationContext{
+		ProjectID:     "proj-1",
+		Dataset:       "test_dataset",
+		InitialPrompt: "Explore the data.",
+	})
+	if err == nil {
+		t.Fatal("expected hard error when all retries fail to parse")
+	}
+	if result == nil {
+		t.Fatal("result should be non-nil even on error")
+	}
+	if result.Completed {
+		t.Error("result should NOT be marked completed on hard parse failure")
+	}
+	if len(provider.Calls) != maxParseRetries+1 {
+		t.Errorf("expected exactly %d LLM calls (1 + %d retries), got %d", maxParseRetries+1, maxParseRetries, len(provider.Calls))
+	}
+}
+
+func TestRunStepWithRetry_NoRetryOnFirstGoodResponse(t *testing.T) {
+	engine, provider := buildTestEngine(t, ExplorationEngineOptions{MaxSteps: 1}, []string{
+		`{"done": true, "summary": "one-shot"}`,
+	})
+
+	result, err := engine.Explore(context.Background(), ExplorationContext{
+		ProjectID:     "proj-1",
+		Dataset:       "test_dataset",
+		InitialPrompt: "Explore the data.",
+	})
+	if err != nil {
+		t.Fatalf("Explore error: %v", err)
+	}
+	if !result.Completed {
+		t.Error("should be marked completed")
+	}
+	if len(provider.Calls) != 1 {
+		t.Errorf("expected exactly 1 LLM call with no retries, got %d", len(provider.Calls))
+	}
+}
+
+func TestMinSteps_RejectsPrematureCompletion(t *testing.T) {
+	// Mock returns done on every call. With MinSteps=5 the first 4 "done"
+	// signals must be rejected; completion accepted on step 5.
+	engine, provider := buildTestEngine(t, ExplorationEngineOptions{
+		MaxSteps: 20,
+		MinSteps: 5,
+	}, nil) // no queue — falls through to DefaultResponse (done:true)
+
+	result, err := engine.Explore(context.Background(), ExplorationContext{
+		ProjectID:     "proj-1",
+		Dataset:       "test_dataset",
+		InitialPrompt: "Explore the data.",
+	})
+	if err != nil {
+		t.Fatalf("Explore error: %v", err)
+	}
+	if !result.Completed {
+		t.Error("exploration should eventually complete at step >= MinSteps")
+	}
+	if result.TotalSteps != 5 {
+		t.Errorf("TotalSteps = %d, want 5 (MinSteps boundary)", result.TotalSteps)
+	}
+	// Rejected-completion steps should have been recorded.
+	var rejected int
+	for _, s := range result.Steps {
+		if s.Action == "complete_rejected" {
+			rejected++
+		}
+	}
+	if rejected != 4 {
+		t.Errorf("expected 4 rejected completions (steps 1..4), got %d", rejected)
+	}
+
+	// Each rejection should have added a nudge message.
+	var nudges int
+	for _, call := range provider.Calls {
+		for _, msg := range call.Request.Messages {
+			if msg.Role == "user" && containsStr(msg.Content, "minimum") {
+				nudges++
+				break
+			}
+		}
+	}
+	if nudges == 0 {
+		t.Error("expected at least one min-steps nudge in the conversation history")
+	}
+}
+
+func TestMinSteps_ZeroDisablesFloor(t *testing.T) {
+	engine, _ := buildTestEngine(t, ExplorationEngineOptions{
+		MaxSteps: 20,
+		MinSteps: 0,
+	}, nil)
+
+	result, err := engine.Explore(context.Background(), ExplorationContext{
+		ProjectID:     "proj-1",
+		Dataset:       "test_dataset",
+		InitialPrompt: "Explore the data.",
+	})
+	if err != nil {
+		t.Fatalf("Explore error: %v", err)
+	}
+	if !result.Completed {
+		t.Error("should complete")
+	}
+	if result.TotalSteps != 1 {
+		t.Errorf("TotalSteps = %d, want 1 (done accepted immediately when MinSteps=0)", result.TotalSteps)
+	}
+}
+
+func TestMinSteps_Boundary_EqualToStep(t *testing.T) {
+	// Exactly at MinSteps, completion must be ACCEPTED (>=, not strict <).
+	// Three queries then done on the 4th turn, with MinSteps=4.
+	engine, _ := buildTestEngine(t, ExplorationEngineOptions{
+		MaxSteps: 10,
+		MinSteps: 4,
+	}, []string{
+		`{"query": "SELECT 1 FROM test_dataset.users"}`,
+		`{"query": "SELECT 2 FROM test_dataset.users"}`,
+		`{"query": "SELECT 3 FROM test_dataset.users"}`,
+		`{"done": true, "summary": "covered"}`, // at step 4, >= MinSteps, accepted
+	})
+
+	result, err := engine.Explore(context.Background(), ExplorationContext{
+		ProjectID:     "proj-1",
+		Dataset:       "test_dataset",
+		InitialPrompt: "Explore the data.",
+	})
+	if err != nil {
+		t.Fatalf("Explore error: %v", err)
+	}
+	if !result.Completed {
+		t.Error("should complete on boundary")
+	}
+	if result.TotalSteps != 4 {
+		t.Errorf("TotalSteps = %d, want 4 (done accepted at step == MinSteps)", result.TotalSteps)
+	}
+	for _, s := range result.Steps {
+		if s.Action == "complete_rejected" {
+			t.Errorf("should not have rejected any step at boundary, saw rejected at step %d", s.Step)
+		}
+	}
+}
+
+func TestMinSteps_CappedToMaxSteps(t *testing.T) {
+	engine := NewExplorationEngine(ExplorationEngineOptions{
+		MaxSteps: 5,
+		MinSteps: 100, // asked for more than MaxSteps
+	})
+	if engine.minSteps != 5 {
+		t.Errorf("minSteps = %d, want 5 (capped to MaxSteps)", engine.minSteps)
+	}
+	// MaxSteps must not be bumped up to match MinSteps.
+	if engine.maxSteps != 5 {
+		t.Errorf("maxSteps = %d, want 5 (unchanged)", engine.maxSteps)
+	}
+}
+
+func TestMinSteps_NegativeClampedToZero(t *testing.T) {
+	engine := NewExplorationEngine(ExplorationEngineOptions{
+		MaxSteps: 10,
+		MinSteps: -5,
+	})
+	if engine.minSteps != 0 {
+		t.Errorf("minSteps = %d, want 0 (negative clamped)", engine.minSteps)
+	}
+}
+
+// TestQwen3StyleResponse_DoesNotTerminateEarly simulates the actual
+// failure mode from the bug report: a reasoning-style response mixing a
+// plan/thinking JSON preamble with the real action. The old parser picked
+// the preamble (no action key) and, finding no query/done, silently
+// completed. With the new parser the action JSON wins and exploration
+// continues.
+func TestQwen3StyleResponse_DoesNotTerminateEarly(t *testing.T) {
+	qwenStyleResponse := `Let me think about this.
+{"plan": "first count users, then look at retention", "notes": "the previous query succeeded"}
+Now I'll run the query:
+` + "```json\n" + `{"thinking": "count active users", "query": "SELECT COUNT(*) FROM test_dataset.users"}` + "\n```"
+
+	engine, provider := buildTestEngine(t, ExplorationEngineOptions{
+		MaxSteps: 3,
+	}, []string{
+		qwenStyleResponse,
+		qwenStyleResponse,
+		`{"done": true, "summary": "got enough"}`,
+	})
+
+	result, err := engine.Explore(context.Background(), ExplorationContext{
+		ProjectID:     "proj-qwen",
+		Dataset:       "test_dataset",
+		InitialPrompt: "Explore the data.",
+	})
+	if err != nil {
+		t.Fatalf("Explore error: %v", err)
+	}
+	if result.TotalSteps < 3 {
+		t.Errorf("TotalSteps = %d, want 3 — reasoning-style responses should not short-circuit", result.TotalSteps)
+	}
+	// Confirm the first two steps actually ran queries (not silent completes).
+	for i := 0; i < 2 && i < len(result.Steps); i++ {
+		if result.Steps[i].Action != "query_data" {
+			t.Errorf("step %d action = %q, want query_data", i+1, result.Steps[i].Action)
+		}
+		if result.Steps[i].Query == "" {
+			t.Errorf("step %d query should be non-empty", i+1)
+		}
+	}
+	if len(provider.Calls) != 3 {
+		t.Errorf("provider calls = %d, want 3", len(provider.Calls))
+	}
 }

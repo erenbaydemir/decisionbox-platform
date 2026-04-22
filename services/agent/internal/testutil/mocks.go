@@ -17,11 +17,23 @@ type MockLLMProvider struct {
 	// DefaultResponse is returned when no matching response is found.
 	DefaultResponse *gollm.ChatResponse
 
+	// ResponseQueue, if non-empty, is consumed in order on each Chat call.
+	// When a queue entry is served it is removed. After the queue is drained
+	// the provider falls back to Responses / DefaultResponse. Use this to
+	// script multi-turn conversations (e.g. first call returns malformed
+	// JSON, second call returns a valid query) in tests of retry or
+	// min-step logic.
+	ResponseQueue []*gollm.ChatResponse
+
 	// Calls records all calls for verification.
 	Calls []MockLLMCall
 
 	// Error if set, all calls return this error.
 	Error error
+
+	// ErrorOnCall, if non-nil, returns the error only on the Nth call
+	// (0-indexed). Other calls succeed. Used for "fail then recover" tests.
+	ErrorOnCall map[int]error
 }
 
 // MockLLMCall records a single LLM call.
@@ -47,10 +59,21 @@ func (m *MockLLMProvider) Validate(ctx context.Context) error {
 }
 
 func (m *MockLLMProvider) Chat(ctx context.Context, req gollm.ChatRequest) (*gollm.ChatResponse, error) {
+	callIdx := len(m.Calls)
 	m.Calls = append(m.Calls, MockLLMCall{Request: req})
 
+	if err, ok := m.ErrorOnCall[callIdx]; ok {
+		return nil, err
+	}
 	if m.Error != nil {
 		return nil, m.Error
+	}
+
+	// ResponseQueue takes precedence: serve + pop the first entry.
+	if len(m.ResponseQueue) > 0 {
+		resp := m.ResponseQueue[0]
+		m.ResponseQueue = m.ResponseQueue[1:]
+		return resp, nil
 	}
 
 	// Check messages for matching response
