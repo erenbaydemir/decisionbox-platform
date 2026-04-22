@@ -173,6 +173,12 @@ services:
       # Values: debug | info | warn | error
       - LOG_LEVEL=info
 
+      # Google Application Default Credentials (for Vertex AI provider — LOCAL DEV ONLY)
+      - GOOGLE_APPLICATION_CREDENTIALS=/home/app/.config/gcloud/application_default_credentials.json
+
+    volumes:
+      - ${HOME}/.config/gcloud:/home/app/.config/gcloud:ro
+
     depends_on:
       mongodb:
         condition: service_healthy
