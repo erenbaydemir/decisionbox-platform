@@ -70,7 +70,7 @@ func Run() {
 		runID           = flag.String("run-id", "", "Discovery run ID for status updates (set by API)")
 		areasFlag       = flag.String("areas", "", "Comma-separated analysis areas to run (empty = all)")
 		maxSteps        = flag.Int("max-steps", 100, "Maximum exploration steps")
-		minSteps        = flag.Int("min-steps", 0, "Minimum exploration steps before accepting a done signal (0 = no floor). If the LLM says 'done' before this count, it is rejected and exploration continues. Guards against reasoning models that terminate too early.")
+		minSteps        = flag.Int("min-steps", 70, "Minimum exploration steps before accepting a done signal (0 = no floor). If the LLM says 'done' before this count, it is rejected and exploration continues. Guards against reasoning models that terminate too early.")
 		skipCache       = flag.Bool("skip-cache", false, "Force schema rediscovery")
 		includeLog      = flag.Bool("include-log", false, "Include full exploration log")
 		testMode        = flag.Bool("test", false, "Test mode - limit analyses for faster testing")
