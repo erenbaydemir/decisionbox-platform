@@ -70,6 +70,7 @@ func Run() {
 		runID           = flag.String("run-id", "", "Discovery run ID for status updates (set by API)")
 		areasFlag       = flag.String("areas", "", "Comma-separated analysis areas to run (empty = all)")
 		maxSteps        = flag.Int("max-steps", 100, "Maximum exploration steps")
+		minSteps        = flag.Int("min-steps", 0, "Minimum exploration steps before accepting a done signal (0 = no floor). If the LLM says 'done' before this count, it is rejected and exploration continues. Guards against reasoning models that terminate too early.")
 		skipCache       = flag.Bool("skip-cache", false, "Force schema rediscovery")
 		includeLog      = flag.Bool("include-log", false, "Include full exploration log")
 		testMode        = flag.Bool("test", false, "Test mode - limit analyses for faster testing")
@@ -116,10 +117,17 @@ func Run() {
 		*maxSteps = 20
 		applog.Info("Test mode enabled - reducing max steps to 20")
 	}
+	if *minSteps > *maxSteps {
+		*minSteps = *maxSteps
+	}
+	if *minSteps < 0 {
+		*minSteps = 0
+	}
 
 	applog.WithFields(applog.Fields{
 		"project_id": *projectID,
 		"max_steps":  *maxSteps,
+		"min_steps":  *minSteps,
 		"env":        cfg.Service.Environment,
 	}).Info("Starting DecisionBox Agent")
 
@@ -134,7 +142,7 @@ func Run() {
 		}
 	}
 
-	if err := runDiscovery(cfg, *projectID, *runID, selectedAreas, *maxSteps, *skipCache, *includeLog, *testMode, *enableDebugLogs, *estimateOnly); err != nil {
+	if err := runDiscovery(cfg, *projectID, *runID, selectedAreas, *maxSteps, *minSteps, *skipCache, *includeLog, *testMode, *enableDebugLogs, *estimateOnly); err != nil {
 		applog.WithError(err).Fatal("Discovery failed")
 	}
 
@@ -446,7 +454,7 @@ func runTestConnection(cfg *config.Config, projectID, target string) error {
 
 // --- Discovery ---
 
-func runDiscovery(cfg *config.Config, projectID string, runID string, selectedAreas []string, maxSteps int, skipCache, includeLog, testMode, enableDebugLogs, estimateOnly bool) error {
+func runDiscovery(cfg *config.Config, projectID string, runID string, selectedAreas []string, maxSteps, minSteps int, skipCache, includeLog, testMode, enableDebugLogs, estimateOnly bool) error {
 	ctx := context.Background()
 
 	// Set project ID in context for warehouse middleware (e.g. governance)
@@ -608,6 +616,7 @@ func runDiscovery(cfg *config.Config, projectID string, runID string, selectedAr
 
 	result, err := orchestrator.RunDiscovery(discoveryCtx, discovery.DiscoveryOptions{
 		MaxSteps:              maxSteps,
+		MinSteps:              minSteps,
 		SkipSchemaCache:       skipCache,
 		IncludeExplorationLog: includeLog,
 		TestMode:              testMode,

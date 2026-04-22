@@ -117,8 +117,13 @@ Each step is written to the `discovery_runs` collection in real-time, so the das
 
 **Self-healing SQL:** If a query fails, the agent sends the error message to the LLM and asks it to fix the SQL. This uses the warehouse provider's `SQLFixPrompt()` (BigQuery-specific SQL fix instructions, Redshift-specific, etc.).
 
+**Strict action parsing:** Exploration continues only when the LLM returns a JSON object containing a recognized action key — `query` (run a query), `done` (terminate), or the legacy `action` field. Responses that are pure prose, malformed JSON, or JSON with unrelated keys (e.g., a reasoning-model preamble like `{"plan": "...", "thinking": "..."}`) are rejected and the agent re-prompts the LLM with a reformat nudge (up to 3 retries per step). This prevents silent early termination on reasoning models whose prose often mentions words like "done" or "complete".
+
+**Early-termination guard (`--min-steps`):** Models biased toward early completion (Qwen3, DeepSeek-R1, GPT-OSS) sometimes return `{"done": true}` after just 1–2 steps even with a 100-step budget. Setting `--min-steps=N` rejects `done` signals until step `N`, records a `complete_rejected` exploration step, and injects a nudge telling the model how many steps remain. Default is `0` (no floor) for backwards compatibility.
+
 **Step types reported to the dashboard:**
 - `query` — SQL query executed (with thinking, SQL, row count, timing)
+- `complete_rejected` — LLM signalled `done` before `--min-steps`; rejected and exploration continued
 - `insight` — The AI identified a pattern (name, severity)
 - `analysis` — Analysis phase started for an area
 - `validation` — Insight validation result

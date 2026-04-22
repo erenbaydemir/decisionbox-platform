@@ -172,7 +172,10 @@ func NewOrchestrator(opts OrchestratorOptions) *Orchestrator {
 
 // DiscoveryOptions configures a discovery run.
 type DiscoveryOptions struct {
-	MaxSteps              int
+	MaxSteps int
+	// MinSteps is a floor on exploration steps — early "done" signals below
+	// this value are rejected and exploration continues. Zero disables it.
+	MinSteps              int
 	SkipSchemaCache       bool
 	IncludeExplorationLog bool
 	TestMode              bool
@@ -311,9 +314,10 @@ func (o *Orchestrator) RunDiscovery(ctx context.Context, opts DiscoveryOptions) 
 		Client:   o.aiClient,
 		Executor: executor,
 		MaxSteps: opts.MaxSteps,
+		MinSteps: opts.MinSteps,
 		Dataset:  datasetsStr,
-		OnStep: func(stepNum int, thinking, query string, rowCount int, queryTimeMs int64, queryFixed bool, errMsg string) {
-			o.statusReporter.AddExplorationStep(ctx, stepNum, thinking, query, rowCount, queryTimeMs, queryFixed, errMsg)
+		OnStep: func(stepNum int, action, thinking, query string, rowCount int, queryTimeMs int64, queryFixed bool, errMsg string) {
+			o.statusReporter.AddExplorationStep(ctx, stepNum, action, thinking, query, rowCount, queryTimeMs, queryFixed, errMsg)
 		},
 	})
 
